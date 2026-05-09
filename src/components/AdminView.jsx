@@ -103,6 +103,14 @@ function AdminView({
   const [adminSearch, setAdminSearch] = useState("");
   const [debouncedAdminSearch, setDebouncedAdminSearch] = useState("");
   const [adminDateFilter, setAdminDateFilter] = useState(todayStr);
+  const [editingBooking, setEditingBooking] = useState(null);
+
+  // Pre-compute yesterday once — avoids 3x inline computation per render
+  const yesterdayStr = useMemo(() => {
+    const d = new Date(Date.now() - 86400000);
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+    return local.toISOString().split("T")[0];
+  }, []);
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -129,7 +137,6 @@ function AdminView({
   const updateSettingsInDB = useCallback(
     async (newSettings) => {
       try {
-        console.log("Saving new settings:", newSettings);
         const sanitizedSettings = Object.fromEntries(
           Object.entries(newSettings).filter(([_, v]) => v !== undefined)
         );
@@ -144,7 +151,6 @@ function AdminView({
           timeoutPromise
         ]);
 
-        console.log("Settings saved successfully!");
         showToast(t.settingsUpdated || "تم حفظ الإعدادات بنجاح!");
       } catch (e) {
         console.error("Error saving settings:", e);
@@ -565,8 +571,10 @@ function AdminView({
     );
   }
 
-  const isSuperAdmin = currentUser?.username?.toLowerCase() === "admin";
-  const [editingBooking, setEditingBooking] = useState(null);
+  const isSuperAdmin = useMemo(
+    () => currentUser?.username?.toLowerCase() === "admin",
+    [currentUser]
+  );
 
   const OrderEditorModal = ({ booking, onClose }) => {
     const [localCart, setLocalCart] = useState(booking.items || booking.cart || []);

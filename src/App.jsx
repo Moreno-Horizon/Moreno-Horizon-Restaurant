@@ -68,16 +68,18 @@ const FallbackLoader = ({ view }) => {
   return <SkeletonPage />;
 };
 
-export default function App() {
-  // Helper for Local Date YYYY-MM-DD
-  const getLocalDate = () => {
-    const d = new Date();
-    const offset = d.getTimezoneOffset();
-    const local = new Date(d.getTime() - offset * 60 * 1000);
-    return local.toISOString().split("T")[0];
-  };
+// Helper for Local Date YYYY-MM-DD — defined OUTSIDE component so it
+// is never recreated on re-renders
+const getLocalDate = () => {
+  const d = new Date();
+  const offset = d.getTimezoneOffset();
+  const local = new Date(d.getTime() - offset * 60 * 1000);
+  return local.toISOString().split("T")[0];
+};
 
-  const todayStr = getLocalDate();
+export default function App() {
+  // Computed once per mount — date doesn't change during a session
+  const todayStr = useMemo(() => getLocalDate(), []);
 
   const [lang, setLang] = useState(
     () => localStorage.getItem("prefLang") || "ar",
@@ -88,8 +90,6 @@ export default function App() {
   }, [lang]);
 
   useEffect(() => {
-    console.log("Current Lang:", lang);
-    console.log("Current T:", t);
     localStorage.setItem("prefLang", lang);
     document.documentElement.lang = lang;
     if (t.dir) document.documentElement.dir = t.dir;
