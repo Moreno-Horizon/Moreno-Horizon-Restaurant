@@ -74,7 +74,10 @@ export default function App() {
   );
   const t = useMemo(() => {
     if (!translations) return {};
-    return translations[lang] || translations["en"] || {};
+    return {
+      ...(translations["en"] || {}),
+      ...(translations[lang] || {}),
+    };
   }, [lang]);
 
   useEffect(() => {
@@ -322,9 +325,8 @@ export default function App() {
           localStorage.getItem("morenoAdminAuth") === "true"
         ) {
           playSound("success");
-          // Read active language translation dynamically to avoid recreating listeners
           const currentLang = localStorage.getItem("prefLang") || "ar";
-          const alertMsg = translations[currentLang]?.newBookingAlert || "حجز جديد وارد!";
+          const alertMsg = translations[currentLang]?.newBookingAlert || translations["en"]?.newBookingAlert || "حجز جديد وارد!";
           showToast(alertMsg);
         }
         if (data.length > 0) {
