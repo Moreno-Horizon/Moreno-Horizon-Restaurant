@@ -369,6 +369,11 @@ export default function App() {
       }
     };
 
+    // Fallback: Force stop loading after 2.5 seconds to ensure UX isn't blocked
+    const fallbackTimer = setTimeout(() => {
+      setIsLoading(false);
+    }, 2500);
+
     // Sync Settings
     const unsubscribeSettings = onSnapshot(
       doc(db, "settings", "general"),
@@ -415,8 +420,14 @@ export default function App() {
         setBookings(data);
 
         bookingsLoaded = true;
+        bookingsLoaded = true;
         checkLoading();
       },
+      (error) => {
+        console.error("Error fetching bookings:", error);
+        bookingsLoaded = true;
+        checkLoading();
+      }
     );
 
     // Sync Users
@@ -440,6 +451,7 @@ export default function App() {
     );
 
     return () => {
+      clearTimeout(fallbackTimer);
       unsubscribeSettings();
       unsubscribeBookings();
       unsubscribeUsers();
