@@ -148,17 +148,24 @@
     margin: 0 !important;
   }
 
-  /* Hide everything by default */
-  nav, footer, button, .no-print, #scroll-progress, .stats-cards, .hero-section {
-    display: none !important;
+  body * {
+    visibility: hidden;
   }
 
   /* Show only specific sections */
+  .print-section, .print-section * {
+    visibility: visible;
+  }
+
+  .no-print, .no-print * {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
   .print-section {
-    display: block !important;
     position: absolute;
-    top: 0;
     left: 0;
+    top: 0;
     width: 100%;
     margin: 0 !important;
     padding: 20px !important;
