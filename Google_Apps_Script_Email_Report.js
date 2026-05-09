@@ -32,7 +32,7 @@ function handleNewBooking(data) {
   } else {
     ss = SpreadsheetApp.create(fileName);
     var s = ss.getActiveSheet();
-    var headers = ["Timestamp", "Date of Booking", "Time", "Name", "Phone", "Room", "Guests", "Restaurant", "Order Details", "Notes", "Status"];
+    var headers = ["Timestamp", "Date of Booking", "Time", "Name", "Room", "Guests", "Restaurant", "Order Details", "Notes", "Status"];
     s.appendRow(headers);
     var headerRange = s.getRange(1, 1, 1, headers.length);
     headerRange.setBackground("#0c4a6e"); // Brand Blue
@@ -49,7 +49,6 @@ function handleNewBooking(data) {
     b.date,
     b.time,
     b.name,
-    b.phone,
     b.room,
     b.guests,
     b.restaurant,
@@ -77,7 +76,7 @@ function handleSendReport(data) {
   var sheet = ss.getActiveSheet();
   
   // 2. Add Headers with styling
-  var headers = ["Time", "Name", "Phone", "Room", "Guests", "Restaurant", "Notes"];
+  var headers = ["Time", "Name", "Room", "Guests", "Restaurant", "Notes"];
   sheet.appendRow(headers);
   var headerRange = sheet.getRange(1, 1, 1, headers.length);
   headerRange.setBackground("#f97316"); // Brand Orange
@@ -90,7 +89,6 @@ function handleSendReport(data) {
     sheet.appendRow([
       b.time, 
       b.name, 
-      b.phone, 
       b.room, 
       b.guests, 
       b.restaurant,

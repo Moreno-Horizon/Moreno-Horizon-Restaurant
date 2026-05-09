@@ -938,7 +938,7 @@ export default function App() {
                   return `
                       <tr>
                         <td>${b.time}</td>
-                        <td>${b.name}<br/><small style="color:#666">${b.phone}</small></td>
+                        <td>${b.name}</td>
                         <td>${b.room}</td>
                         <td style="text-align: center;">${b.guests}</td>
                         <td style="font-size: 11px; line-height: 1.4;">${engOrder}</td>
@@ -1058,7 +1058,7 @@ export default function App() {
           <tbody>
             ${items.map(b => `
               <tr>
-                <td style="padding: 10px; border: 1px solid #eee;">${b.name}<br/><small style="color:#666">${b.phone}</small></td>
+                <td style="padding: 10px; border: 1px solid #eee;">${b.name}</td>
                 <td style="padding: 10px; border: 1px solid #eee;">${b.room}</td>
                 <td style="padding: 10px; border: 1px solid #eee; text-align: center;">${b.guests}</td>
                 <td style="padding: 10px; border: 1px solid #eee;">${b.time}</td>
