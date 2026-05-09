@@ -915,7 +915,6 @@ export default function App() {
     const restaurantTitle = restaurantId ? (restaurantId === 'italian' ? ' - Italian Restaurant' : ' - Oriental Restaurant') : '';
 
     const renderTable = (items, title) => {
-      if (items.length === 0) return "";
       const pax = items.reduce((sum, b) => sum + (parseInt(b.guests) || 0), 0);
       
       return `
@@ -934,7 +933,7 @@ export default function App() {
               </tr>
             </thead>
             <tbody>
-              ${items
+              ${items.length === 0 ? `<tr><td colspan="7" style="text-align: center; font-style: italic; color: #888; padding: 15px;">No bookings</td></tr>` : items
                 .map((b) => {
                   const engStatus =
                     b.status === "pending" ? "Pending" : 
@@ -1058,7 +1057,6 @@ export default function App() {
     const totalPax = calculatePax(filteredBookings);
 
     const renderEmailTable = (items, title) => {
-      if (items.length === 0) return "";
       const pax = calculatePax(items);
       return `
         <h3 style="color: #f97316; margin-top: 30px; border-bottom: 1px solid #eee;">${title} (Pax: ${pax})</h3>
@@ -1073,7 +1071,7 @@ export default function App() {
             </tr>
           </thead>
           <tbody>
-            ${items.map(b => `
+            ${items.length === 0 ? `<tr><td colspan="5" style="text-align: center; padding: 15px; color: #888; border: 1px solid #eee; font-style: italic;">No bookings</td></tr>` : items.map(b => `
               <tr>
                 <td style="padding: 10px; border: 1px solid #eee;">${b.name}</td>
                 <td style="padding: 10px; border: 1px solid #eee;">${b.room}</td>
