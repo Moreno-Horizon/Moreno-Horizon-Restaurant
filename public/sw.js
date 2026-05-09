@@ -1,5 +1,7 @@
-const CACHE_NAME = 'moreno-horizon-v2'; // Updated version
+const CACHE_NAME = 'moreno-horizon-v3'; // Updated version
 const ASSETS_TO_CACHE = [
+  '/',
+  '/index.html',
   '/logo.webp',
   '/hero-bg.webp',
   '/manifest.json'

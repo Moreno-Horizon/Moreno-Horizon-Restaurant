@@ -1,4 +1,4 @@
-import React, { memo, useState } from "react";
+import React, { memo, useState, useEffect, useCallback, useMemo } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   Search,
@@ -23,45 +23,533 @@ import {
   BestSellersChart,
   CustomerDatabasePanel,
 } from "./AdminPanels";
-import { doc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { doc, updateDoc, deleteDoc, serverTimestamp, query, collection, where, getDocs, setDoc } from "firebase/firestore";
+import { translations } from "../translations";
 
 function AdminView({
   t,
-  isAdminAuth,
-  setIsAdminAuth,
-  adminUser,
-  setAdminUser,
-  adminPass,
-  setAdminPass,
-  handleAdminLogin,
-  adminRole,
-  setAdminRole,
-  currentUser,
-  setCurrentUser,
   italianTodayAvail,
   orientalTodayAvail,
   bookings,
   todayStr,
   weeklyData,
   maxWeeklyCount,
-  adminDateFilter,
-  setAdminDateFilter,
-  printDailyReport,
-  exportToExcel,
-  sendEmailReport,
   settings,
-  updateSettingsInDB,
   lang,
   users,
   db,
   showToast,
   blacklist,
-  adminSearch,
-  setAdminSearch,
-  filteredBookings,
-  printReceipt,
   MENU_ITEMS,
 }) {
+  // --- Admin Auth & User States ---
+  const [isAdminAuth, setIsAdminAuth] = useState(
+    () => localStorage.getItem("morenoAdminAuth") === "true"
+  );
+  const [currentUser, setCurrentUser] = useState(() =>
+    JSON.parse(localStorage.getItem("morenoCurrentUser") || "null")
+  );
+  const [adminRole, setAdminRole] = useState(() =>
+    localStorage.getItem("morenoAdminRole")
+  ); // 'main' or 'staff'
+  const [adminUser, setAdminUser] = useState("");
+  const [adminPass, setAdminPass] = useState("");
+
+  const handleAdminLogin = async () => {
+    if (adminUser.toLowerCase() === "admin" && adminPass === settings.adminPass) {
+      const adminData = { name: "Admin", username: "admin", role: "main" };
+      setAdminRole("main");
+      setCurrentUser(adminData);
+      setIsAdminAuth(true);
+      localStorage.setItem("morenoAdminAuth", "true");
+      localStorage.setItem("morenoAdminRole", "main");
+      localStorage.setItem("morenoCurrentUser", JSON.stringify(adminData));
+      return;
+    }
+
+    // Check users collection
+    try {
+      const userQuery = query(
+        collection(db, "users"),
+        where("username", "==", adminUser),
+        where("password", "==", adminPass)
+      );
+      const userSnap = await getDocs(userQuery);
+      if (!userSnap.empty) {
+        const userData = userSnap.docs[0].data();
+        const adminData = {
+          name: userData.name,
+          username: userData.username,
+          role: userData.role,
+        };
+        setAdminRole(userData.role);
+        setCurrentUser(adminData);
+        setIsAdminAuth(true);
+        // Persist session
+        localStorage.setItem("morenoAdminAuth", "true");
+        localStorage.setItem("morenoAdminRole", userData.role);
+        localStorage.setItem("morenoCurrentUser", JSON.stringify(adminData));
+      } else {
+        showToast(t.wrongPassword);
+      }
+    } catch (e) {
+      console.error("Login Error:", e);
+      showToast(t.wrongPassword);
+    }
+  };
+
+  // --- Admin Filter States ---
+  const [adminTab, setAdminTab] = useState("all");
+  const [adminSearch, setAdminSearch] = useState("");
+  const [debouncedAdminSearch, setDebouncedAdminSearch] = useState("");
+  const [adminDateFilter, setAdminDateFilter] = useState(todayStr);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedAdminSearch(adminSearch);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [adminSearch]);
+
+  const filteredBookings = useMemo(() => {
+    return bookings.filter((b) => {
+      const matchesSearch =
+        b.name?.toLowerCase().includes(debouncedAdminSearch.toLowerCase()) ||
+        b.phone?.includes(debouncedAdminSearch) ||
+        (b.room && b.room.includes(debouncedAdminSearch));
+      const matchesTab = adminTab === "all" || b.status === adminTab;
+
+      if (debouncedAdminSearch) return matchesSearch && matchesTab;
+      if (adminDateFilter === "all") return matchesTab;
+      return b.date === adminDateFilter && matchesTab;
+    });
+  }, [bookings, debouncedAdminSearch, adminTab, adminDateFilter]);
+
+  // --- Functions ---
+  const updateSettingsInDB = useCallback(
+    async (newSettings) => {
+      try {
+        console.log("Saving new settings:", newSettings);
+        const sanitizedSettings = Object.fromEntries(
+          Object.entries(newSettings).filter(([_, v]) => v !== undefined)
+        );
+        
+        // Timeout wrapper for setDoc to prevent infinite hang
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Timeout: Firebase connection blocked")), 8000)
+        );
+
+        await Promise.race([
+          setDoc(doc(db, "settings", "general"), sanitizedSettings, { merge: true }),
+          timeoutPromise
+        ]);
+
+        console.log("Settings saved successfully!");
+        showToast(t.settingsUpdated || "تم حفظ الإعدادات بنجاح!");
+      } catch (e) {
+        console.error("Error saving settings:", e);
+        showToast(t.errorSavingSettings || "حدث خطأ أثناء حفظ الإعدادات");
+      }
+    },
+    [t, db, showToast]
+  );
+
+  const printReceipt = useCallback(
+    (booking) => {
+      const curLang = t;
+      let cleanOrderDetails = curLang.noFoodOrders;
+      if (booking.items && booking.items.length > 0) {
+        cleanOrderDetails = booking.items
+          .map((item) => `- ${item.qty}x ${item.name[lang] || item.name["en"]}`)
+          .join("\n");
+      } else if (booking.orderDetails) {
+        cleanOrderDetails = booking.orderDetails;
+      }
+
+      const isItalian =
+        booking.resId === "italian" ||
+        (booking.restaurant &&
+          (booking.restaurant.includes("Italian") ||
+            booking.restaurant.includes("إيطالي")));
+      const resNamePrint = isItalian ? curLang.italian : curLang.oriental;
+
+      const html = `
+            <!DOCTYPE html>
+            <html dir="${curLang.dir}">
+            <head>
+                <meta charset="utf-8">
+                <title>${curLang.receipt} MH-${booking.id.toString().slice(-4)}</title>
+                <style>
+                    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap');
+                    body {
+                        font-family: 'Cairo', sans-serif;
+                        margin: 0;
+                        padding: 20px;
+                        display: flex;
+                        justify-content: center;
+                        background: #fff;
+                        direction: ${curLang.dir};
+                    }
+                    .receipt { width: 100%; max-width: 400px; }
+                    .header { text-align: center; margin-bottom: 25px; }
+                    .header h1 { margin: 0; font-size: 28px; color: #000; font-weight: 900; }
+                    .header p { margin: 5px 0 0; font-size: 14px; color: #333; }
+                    .divider { border-top: 2px dashed #000; margin: 20px 0; }
+                    .info-row { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 15px; color: #000; }
+                    .info-row strong { font-weight: bold; }
+                    .order-details { 
+                        margin-top: 20px; font-size: 15px; color: #000; 
+                        white-space: pre-wrap; padding: 10px; border: 1px dashed #000; line-height: 1.8;
+                    }
+                    .footer { text-align: center; margin-top: 30px; font-size: 14px; color: #333; }
+                    @page { size: auto; margin: 0mm; }
+                    body { margin: 15mm; }
+                </style>
+            </head>
+            <body>
+                <div class="receipt">
+                    <div class="header">
+                        <img src="${window.location.origin}/logo.webp" alt="Moreno Horizon" style="max-width: 140px; height: auto; margin-bottom: 15px; display: inline-block;" />
+                        <h1>${curLang.brand}</h1>
+                        <p>${curLang.receipt} #MH-${booking.id.toString().slice(-4)}</p>
+                    </div>
+                    <div class="divider"></div>
+                    <div class="info-row"><span>${curLang.bookingName}:</span><strong>${booking.name}</strong></div>
+                    <div class="info-row"><span>${curLang.room}:</span><strong>${booking.room}</strong></div>
+                    <div class="info-row"><span>${curLang.date}:</span><strong>${booking.date}</strong></div>
+                    <div class="info-row"><span>${curLang.time}:</span><strong>${booking.time}</strong></div>
+                    <div class="info-row"><span>${curLang.restaurantType}:</span><strong>${resNamePrint}</strong></div>
+                    <div class="info-row"><span>${curLang.bookingGuests}:</span><strong>${booking.guests}</strong></div>
+                    <div class="divider"></div>
+                    <div class="order-details">${cleanOrderDetails}</div>
+                    <div class="divider"></div>
+                    <div class="footer">
+                        <p>${curLang.thankYou}</p>
+                        <p style="margin-top: 10px; font-weight: bold; font-size: 12px; color: #666;">${curLang.designedBy}</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+
+      const printWindow = window.open("", "_blank");
+      if (printWindow) {
+        printWindow.document.write(html);
+        printWindow.document.close();
+        setTimeout(() => {
+          printWindow.focus();
+          printWindow.print();
+        }, 500);
+      } else {
+        showToast(t.allowPopups);
+      }
+    },
+    [t, lang]
+  );
+
+  const printDailyReport = useCallback((restaurantId = null) => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      showToast(t.allowPopups);
+      return;
+    }
+
+    const reportT = translations.en;
+    const isItalianBooking = (b) => {
+      const rId = (b.resId || "").toLowerCase();
+      const rName = (b.restaurant || "").toLowerCase();
+      return rId === 'italian' || rName.includes('italian') || rName.includes('إيطالي') || rName.includes('ايطالي');
+    };
+    const isOrientalBooking = (b) => {
+      const rId = (b.resId || "").toLowerCase();
+      const rName = (b.restaurant || "").toLowerCase();
+      return rId === 'oriental' || rName.includes('oriental') || rName.includes('شرقي') || rName.includes('عربي');
+    };
+
+    const bookingsToPrint = restaurantId 
+      ? filteredBookings.filter(b => {
+          if (restaurantId === 'italian') return isItalianBooking(b);
+          if (restaurantId === 'oriental') return isOrientalBooking(b);
+          return true;
+        })
+      : filteredBookings;
+
+    const totalPax = bookingsToPrint.reduce((sum, b) => sum + (parseInt(b.guests) || 0), 0);
+    const restaurantTitle = restaurantId ? (restaurantId === 'italian' ? ' - Italian Restaurant' : ' - Oriental Restaurant') : '';
+
+    const renderTable = (items, title) => {
+      const pax = items.reduce((sum, b) => sum + (parseInt(b.guests) || 0), 0);
+      
+      return `
+        <div style="margin-top: 30px;">
+          <h2 style="font-size: 18px; border-bottom: 1px solid #ddd; padding-bottom: 5px;">${title}</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>${reportT.time}</th>
+                <th>${reportT.bookingName}</th>
+                <th>${reportT.room}</th>
+                <th>${reportT.guests}</th>
+                <th>Order Details</th>
+                <th>Notes</th>
+                <th>${reportT.status}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items.length === 0 ? `<tr><td colspan="7" style="text-align: center; font-style: italic; color: #888; padding: 15px;">No bookings</td></tr>` : items
+                .map((b) => {
+                  const engStatus =
+                    b.status === "pending" ? "Pending" : 
+                    b.status === "confirmed" ? "Confirmed" : 
+                    b.status === "waitlist" ? "Waitlist" : 
+                    b.status === "cancelled" ? "Cancelled" : "Completed";
+
+                  const engOrder = b.items && b.items.length > 0
+                    ? b.items.map(i => {
+                        const m = MENU_ITEMS.find(item => item.id === i.id);
+                        const itemName = m ? (m.name?.en || m.name?.ar || m.name) : i.name || i.id;
+                        return `<b>${i.qty}x</b> ${itemName}`;
+                      }).join("<br/>")
+                    : "-";
+
+                  return `
+                      <tr>
+                        <td>${b.time}</td>
+                        <td>${b.name}</td>
+                        <td>${b.room}</td>
+                        <td style="text-align: center;">${b.guests}</td>
+                        <td style="font-size: 11px; line-height: 1.4;">${engOrder}</td>
+                        <td style="font-size: 11px;">${b.notes || "-"}</td>
+                        <td>${engStatus}</td>
+                      </tr>
+                    `;
+                })
+                .join("")}
+            </tbody>
+            <tfoot>
+              <tr class="total-row">
+                <td colspan="3" style="text-align: right;">${reportT.totalPax}:</td>
+                <td style="text-align: center;">${pax}</td>
+                <td colspan="2"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      `;
+    };
+
+    const italianBookings = bookingsToPrint.filter(isItalianBooking);
+    const orientalBookings = bookingsToPrint.filter(isOrientalBooking);
+    const otherBookings = bookingsToPrint.filter(b => !isItalianBooking(b) && !isOrientalBooking(b));
+
+    const content = `
+      <html>
+        <head>
+          <title>${reportT.dailyReport}${restaurantTitle} - ${adminDateFilter}</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
+            body { font-family: 'Cairo', sans-serif; padding: 40px; direction: ltr; color: #1c1917; }
+            .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #e7e5e4; padding-bottom: 20px; }
+            h1 { margin: 0; font-size: 24px; color: #1c1917; }
+            .date { color: #78716c; font-weight: bold; margin-top: 5px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+            th, td { border: 1px solid #e7e5e4; padding: 10px 8px; text-align: left; }
+            th { background-color: #f5f5f4; font-weight: bold; }
+            .footer { margin-top: 40px; text-align: center; font-size: 10px; color: #a8a29e; border-top: 1px solid #e7e5e4; padding-top: 20px; }
+            .total-row { background-color: #f5f5f4; font-weight: bold; }
+            @page { size: auto; margin: 0mm; }
+            body { margin: 15mm; }
+            h2 { color: #f97316; margin-top: 30px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>${reportT.dailyReport}${restaurantTitle}</h1>
+            <div class="date">${adminDateFilter}</div>
+          </div>
+          
+          ${restaurantId === 'italian' ? renderTable(italianBookings, "Italian Restaurant") : 
+            restaurantId === 'oriental' ? renderTable(orientalBookings, "Oriental Restaurant") :
+            `
+              ${renderTable(italianBookings, "Italian Restaurant")}
+              ${renderTable(orientalBookings, "Oriental Restaurant")}
+              ${renderTable(otherBookings, "Other Bookings")}
+            `
+          }
+
+          <div class="footer">
+            <p>© ${new Date().getFullYear()} Moreno Horizon SPA & RESORT</p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(content);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 500);
+  }, [filteredBookings, adminDateFilter, t, MENU_ITEMS]);
+
+  const sendEmailReport = useCallback(async () => {
+    if (!settings.reportEmail) {
+      showToast(t.incompleteBooking);
+      return;
+    }
+
+    showToast(t.savingReservation);
+    
+    const isItalianBooking = (b) => {
+      const rId = (b.resId || "").toLowerCase();
+      const rName = (b.restaurant || "").toLowerCase();
+      return rId === 'italian' || rName.includes('italian') || rName.includes('إيطالي') || rName.includes('ايطالي');
+    };
+
+    const isOrientalBooking = (b) => {
+      const rId = (b.resId || "").toLowerCase();
+      const rName = (b.restaurant || "").toLowerCase();
+      return rId === 'oriental' || rName.includes('oriental') || rName.includes('شرقي') || rName.includes('عربي');
+    };
+
+    const italianBookings = filteredBookings.filter(isItalianBooking);
+    const orientalBookings = filteredBookings.filter(isOrientalBooking);
+    const otherBookings = filteredBookings.filter(b => !isItalianBooking(b) && !isOrientalBooking(b));
+
+    const calculatePax = (items) => items.reduce((sum, b) => sum + (parseInt(b.guests) || 0), 0);
+    const totalPax = calculatePax(filteredBookings);
+
+    const renderEmailTable = (items, title) => {
+      const pax = calculatePax(items);
+      return `
+        <h3 style="color: #f97316; margin-top: 30px; border-bottom: 1px solid #eee;">${title} (Pax: ${pax})</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+          <thead>
+            <tr style="background: #f9fafb;">
+              <th style="padding: 10px; border: 1px solid #eee; text-align: left;">Guest</th>
+              <th style="padding: 10px; border: 1px solid #eee; text-align: left;">Room</th>
+              <th style="padding: 10px; border: 1px solid #eee; text-align: center;">Pax</th>
+              <th style="padding: 10px; border: 1px solid #eee; text-align: left;">Time</th>
+              <th style="padding: 10px; border: 1px solid #eee; text-align: left;">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.length === 0 ? `<tr><td colspan="5" style="text-align: center; padding: 15px; color: #888; border: 1px solid #eee; font-style: italic;">No bookings</td></tr>` : items.map(b => `
+              <tr>
+                <td style="padding: 10px; border: 1px solid #eee;">${b.name}</td>
+                <td style="padding: 10px; border: 1px solid #eee;">${b.room}</td>
+                <td style="padding: 10px; border: 1px solid #eee; text-align: center;">${b.guests}</td>
+                <td style="padding: 10px; border: 1px solid #eee;">${b.time}</td>
+                <td style="padding: 10px; border: 1px solid #eee; font-size: 12px;">${b.notes || "-"}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    };
+
+    try {
+      const GOOGLE_SCRIPT_URL = import.meta.env.VITE_GOOGLE_SCRIPT_URL;
+      if (!GOOGLE_SCRIPT_URL) {
+        showToast(t.dir === "rtl" ? "يرجى إضافة رابط Google Apps Script في الإعدادات" : "Please add Google Apps Script URL in .env");
+        return;
+      }
+
+      const payload = {
+        command: "sendReport",
+        targetEmail: settings.reportEmail,
+        date: adminDateFilter,
+        totalPax: totalPax,
+        bookings: filteredBookings.map(b => ({
+          time: b.time,
+          name: b.name,
+          phone: b.phone,
+          room: b.room,
+          guests: b.guests,
+          restaurant: b.restaurant,
+          resId: b.resId || "",
+          notes: b.notes || ""
+        }))
+      };
+
+      await fetch(GOOGLE_SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify(payload)
+      });
+
+      showToast(t.reportSent);
+    } catch (e) {
+      console.error(e);
+      showToast(t.error);
+    }
+  }, [filteredBookings, adminDateFilter, settings.reportEmail, t]);
+
+  const exportToExcel = useCallback(() => {
+    const reportT = translations.en;
+    const headers = [
+      "ID",
+      reportT.date,
+      reportT.time,
+      reportT.fullName,
+      reportT.room,
+      reportT.restaurantType,
+      reportT.bookingGuests,
+      reportT.status,
+      reportT.orderSummary,
+      reportT.notesLabel || "Notes",
+    ];
+    const rows = filteredBookings.map((b) => {
+      const engOrder =
+        b.items && b.items.length > 0
+          ? b.items
+              .map((i) => {
+                const m = MENU_ITEMS.find((item) => item.id === i.id);
+                const itemName = m ? (m.name?.en || m.name?.ar || m.name) : i.name || i.id;
+                return `${i.qty}x ${itemName}`;
+              })
+              .join(" | ")
+          : b.orderDetails
+            ? b.orderDetails.replace(/\n/g, " | ").replace(/"/g, "'")
+            : "";
+
+      return [
+        b.id,
+        b.date,
+        b.time,
+        `"${b.name}"`,
+        `"${b.room}"`,
+        b.resId === "italian" ? "Italian" : "Oriental",
+        b.guests,
+        b.status === "pending"
+          ? "Pending"
+          : b.status === "confirmed"
+            ? "Confirmed"
+            : b.status === "waitlist"
+              ? "Waitlist"
+              : b.status === "cancelled"
+                ? "Cancelled"
+                : "Completed",
+        `"${engOrder}"`,
+        `"${b.notes || ""}"`,
+      ];
+    });
+
+    const csvContent = [headers, ...rows].map((e) => e.join(",")).join("\n");
+    const blob = new Blob([`\\ufeff${csvContent}`], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `bookings_${adminDateFilter}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [filteredBookings, t, adminDateFilter, MENU_ITEMS]);
+
   if (!isAdminAuth) {
     return (
       <div className="max-w-7xl mx-auto py-16 px-4 animate-fade-in">
