@@ -99,4 +99,6 @@ export default {
   securityNote: "Nota di sicurezza",
   securityNoteDesc: "Per gestire le password e i permessi di accesso, utilizza la sezione 'Gestisci utenti' qui sotto. Puoi cambiare la password di qualsiasi utente o modificare il suo ruolo da lì.",
   successMsg: "Siamo lieti che abbiate scelto i nostri ristoranti. La vostra prenotazione è stata registrata con successo e non vediamo l'ora di accogliervi per un'esperienza culinaria eccezionale. Il vostro feedback è molto importante per noi.",
+  notesLabel: "Note aggiuntive (Opzionale)",
+  notesPlaceholder: "Hai richieste speciali?",
 };

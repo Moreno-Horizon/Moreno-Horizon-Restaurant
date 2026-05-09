@@ -135,6 +135,7 @@ export default function App() {
       time: "",
       guests: "",
       restaurant: "",
+      notes: "",
     };
   });
   const [activeRestaurantMenu, setActiveRestaurantMenu] = useState("oriental");
@@ -712,6 +713,7 @@ export default function App() {
         status: overrideStatus || "pending",
         orderDetails: orderDetails,
         engOrderDetails: engOrderDetails,
+        notes: bookingData.notes || "",
         total: 0,
         items: cart,
       };
@@ -915,6 +917,7 @@ export default function App() {
                 <th>${reportT.room}</th>
                 <th>${reportT.guests}</th>
                 <th>Order Details</th>
+                <th>Notes</th>
                 <th>${reportT.status}</th>
               </tr>
             </thead>
@@ -942,6 +945,7 @@ export default function App() {
                         <td>${b.room}</td>
                         <td style="text-align: center;">${b.guests}</td>
                         <td style="font-size: 11px; line-height: 1.4;">${engOrder}</td>
+                        <td style="font-size: 11px;">${b.notes || "-"}</td>
                         <td>${engStatus}</td>
                       </tr>
                     `;
@@ -1053,6 +1057,7 @@ export default function App() {
               <th style="padding: 10px; border: 1px solid #eee; text-align: left;">Room</th>
               <th style="padding: 10px; border: 1px solid #eee; text-align: center;">Pax</th>
               <th style="padding: 10px; border: 1px solid #eee; text-align: left;">Time</th>
+              <th style="padding: 10px; border: 1px solid #eee; text-align: left;">Notes</th>
             </tr>
           </thead>
           <tbody>
@@ -1062,6 +1067,7 @@ export default function App() {
                 <td style="padding: 10px; border: 1px solid #eee;">${b.room}</td>
                 <td style="padding: 10px; border: 1px solid #eee; text-align: center;">${b.guests}</td>
                 <td style="padding: 10px; border: 1px solid #eee;">${b.time}</td>
+                <td style="padding: 10px; border: 1px solid #eee; font-size: 12px;">${b.notes || "-"}</td>
               </tr>
             `).join("")}
           </tbody>
@@ -1144,6 +1150,7 @@ export default function App() {
       reportT.bookingGuests,
       reportT.status,
       reportT.orderSummary,
+      reportT.notesLabel || "Notes",
     ];
     const rows = filteredBookings.map((b) => {
       const engOrder =
@@ -1177,6 +1184,7 @@ export default function App() {
                 ? "Cancelled"
                 : "Completed",
         `"${engOrder}"`,
+        `"${b.notes || ""}"`,
       ];
     });
 

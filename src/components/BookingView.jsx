@@ -10,6 +10,7 @@ import {
   Clock,
   Users,
   Utensils,
+  MessageSquare,
 } from "lucide-react";
 
 function BookingView({
@@ -317,6 +318,21 @@ function BookingView({
                     style={{
                       [t.dir === "rtl" ? "left" : "right"]: "1.25rem",
                     }}
+                  />
+                </div>
+                <div className="relative md:col-span-2">
+                  <MessageSquare
+                    className="absolute top-6 -translate-y-1/2 text-stone-400"
+                    style={{
+                      [t.dir === "rtl" ? "right" : "left"]: "1.25rem",
+                    }}
+                  />
+                  <textarea
+                    name="notes"
+                    value={bookingData.notes}
+                    onChange={handleInputChange}
+                    placeholder={t.notesPlaceholder || "Any special requests?"}
+                    className={`w-full bg-stone-50/80 p-5 rounded-2xl outline-none focus:ring-2 focus:ring-brand-orange focus:bg-white transition font-bold border border-transparent focus:border-brand-orange/20 min-h-[100px] resize-none ${t.dir === "rtl" ? "pr-12" : "pl-12"}`}
                   />
                 </div>
                 {/* Continue to Menu Selection Button */}

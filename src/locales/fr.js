@@ -187,4 +187,6 @@ export default {
   book: "Réservation",
   loadMore: "Charger plus",
   lastBooking: "Dernière réservation",
+  notesLabel: "Notes supplémentaires (Optionnel)",
+  notesPlaceholder: "Avez-vous des demandes spéciales ?",
 };
