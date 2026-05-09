@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { memo, useState } from "react";
 
-const TrackView = ({ t, bookings }) => {
+const TrackView = memo(({ t, bookings }) => {
   const [trackPhone, setTrackPhone] = useState("");
   const [trackResult, setTrackResult] = useState(null);
 
@@ -89,6 +89,6 @@ const TrackView = ({ t, bookings }) => {
       </div>
     </div>
   );
-};
+});
 
 export default TrackView;

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo, useState } from "react";
 import {
   Menu,
   X,
@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { MorenoLogo } from "./AdminPanels";
 
-const Navbar = ({
+const Navbar = memo(({
   view,
   setView,
   isSidebarOpen,
@@ -33,7 +33,7 @@ const Navbar = ({
   translations,
   t,
 }) => {
-  const [isBookingOpen, setIsBookingOpen] = React.useState(false);
+  const [isBookingOpen, setIsBookingOpen] = useState(false);
   return (
     <nav
       className={`fixed top-0 left-0 right-0 z-[80] transition-all duration-500 ${isSidebarOpen ? "opacity-0" : "opacity-100"} ${view === "home" ? "bg-transparent" : "glass border-b border-stone-200/50 shadow-sm"}`}
@@ -292,6 +292,8 @@ const Navbar = ({
       )}
     </nav>
   );
-};
+});
+
+Navbar.displayName = "Navbar";
 
 export default Navbar;

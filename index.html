@@ -15,12 +15,17 @@
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/webp" href="/logo.webp" />
 
-    <!-- Fonts -->
+    <!-- Fonts & Performance -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preload" as="image" href="/logo.webp">
+    <link rel="preload" as="image" href="/hero-bg.webp">
     <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Cairo:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+    
     <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#1e293b">
+    <meta name="theme-color" content="#1c1917">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body class="custom-scrollbar text-stone-800 antialiased selection:bg-brand-orange/30">
     <div id="root"></div>

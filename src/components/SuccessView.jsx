@@ -1,7 +1,7 @@
-import React from "react";
+import React, { memo } from "react";
 import { CheckCircle, ArrowRight, Star } from "lucide-react";
 
-const SuccessView = ({ t, setView }) => {
+const SuccessView = memo(({ t, setView }) => {
   const reviews = [
     {
       name: "TripAdvisor",
@@ -93,6 +93,6 @@ const SuccessView = ({ t, setView }) => {
       </div>
     </div>
   );
-};
+});
 
 export default SuccessView;

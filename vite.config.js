@@ -9,7 +9,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           firebase: ['firebase/app', 'firebase/firestore'],
-          vendor: ['react', 'react-dom', 'lucide-react', 'qrcode.react', 'react-phone-number-input'],
+          vendor: ['react', 'react-dom'],
         }
       }
     },

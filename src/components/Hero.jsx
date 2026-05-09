@@ -1,6 +1,7 @@
+import { memo } from "react";
 import { ArrowRight } from "lucide-react";
 
-const Hero = ({ t, setView, setToast }) => {
+const Hero = memo(({ t, setView, setToast }) => {
   return (
     <div>
       <div className="relative min-h-[100dvh] flex items-center justify-center text-center text-white px-4">
@@ -63,6 +64,8 @@ const Hero = ({ t, setView, setToast }) => {
       </div>
     </div>
   );
-};
+});
+
+Hero.displayName = "Hero";
 
 export default Hero;

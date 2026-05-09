@@ -1,7 +1,6 @@
-import React from "react";
-import { Star } from "lucide-react";
+import React, { memo } from "react";
 
-const Footer = ({ t, setView }) => {
+const Footer = memo(({ t, setView }) => {
   return (
     <footer className="bg-brand-dark text-stone-400 py-5 border-t-[2px] border-brand-blue text-center relative overflow-hidden">
       <div className="relative z-10 flex flex-col items-center gap-3">
@@ -25,6 +24,8 @@ const Footer = ({ t, setView }) => {
       </div>
     </footer>
   );
-};
+});
+
+Footer.displayName = "Footer";
 
 export default Footer;

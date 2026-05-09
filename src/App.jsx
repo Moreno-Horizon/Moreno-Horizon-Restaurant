@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from "react";
 import {
   collection,
   doc,
@@ -35,6 +35,7 @@ import {
   Clock,
   Home,
   Utensils,
+  Loader2
 } from "lucide-react";
 import PhoneInput from "react-phone-number-input";
 import "react-phone-number-input/style.css";
@@ -46,16 +47,27 @@ import { db } from "./firebase";
 import { translations } from "./translations";
 import { CATEGORIES, MENU_ITEMS } from "./data";
 
-// Components
+// Core Components (Always loaded)
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import Hero from "./components/Hero";
 import CartSidebar from "./components/CartSidebar";
-import BookingView from "./components/BookingView";
-import AdminView from "./components/AdminView";
-import MenuView from "./components/MenuView";
-import TrackView from "./components/TrackView";
-import SuccessView from "./components/SuccessView";
+
+// Lazy Loaded Views (Loaded on demand to improve performance)
+const BookingView = lazy(() => import("./components/BookingView"));
+const AdminView = lazy(() => import("./components/AdminView"));
+const MenuView = lazy(() => import("./components/MenuView"));
+const TrackView = lazy(() => import("./components/TrackView"));
+const SuccessView = lazy(() => import("./components/SuccessView"));
+
+import { SkeletonPage, SkeletonMenu } from "./components/SkeletonLoader";
+
+// Suspense Fallback Loader
+const FallbackLoader = ({ view }) => {
+  if (view === "menu") return <SkeletonMenu />;
+  return <SkeletonPage />;
+};
+
 export default function App() {
   // Helper for Local Date YYYY-MM-DD
   const getLocalDate = () => {
@@ -377,8 +389,9 @@ export default function App() {
     );
 
     // Sync Bookings & Alert Logic
+    const bookingsQuery = query(collection(db, "bookings"), where("date", ">=", todayStr));
     const unsubscribeBookings = onSnapshot(
-      collection(db, "bookings"),
+      bookingsQuery,
       (snapshot) => {
         const data = snapshot.docs.map((doc) => ({
           id: doc.id,
@@ -924,6 +937,7 @@ export default function App() {
                 <th>${reportT.bookingName}</th>
                 <th>${reportT.room}</th>
                 <th>${reportT.guests}</th>
+                <th>Order Details</th>
                 <th>${reportT.status}</th>
               </tr>
             </thead>
@@ -936,12 +950,21 @@ export default function App() {
                     b.status === "waitlist" ? "Waitlist" : 
                     b.status === "cancelled" ? "Cancelled" : "Completed";
 
+                  const engOrder = b.items && b.items.length > 0
+                    ? b.items.map(i => {
+                        const m = MENU_ITEMS.find(item => item.id === i.id);
+                        const itemName = m ? (m.name?.en || m.name?.ar || m.name) : i.name || i.id;
+                        return `<b>${i.qty}x</b> ${itemName}`;
+                      }).join("<br/>")
+                    : "-";
+
                   return `
                       <tr>
                         <td>${b.time}</td>
-                        <td>${b.name}</td>
+                        <td>${b.name}<br/><small style="color:#666">${b.phone}</small></td>
                         <td>${b.room}</td>
                         <td style="text-align: center;">${b.guests}</td>
+                        <td style="font-size: 11px; line-height: 1.4;">${engOrder}</td>
                         <td>${engStatus}</td>
                       </tr>
                     `;
@@ -952,7 +975,7 @@ export default function App() {
               <tr class="total-row">
                 <td colspan="3" style="text-align: right;">${reportT.totalPax}:</td>
                 <td style="text-align: center;">${pax}</td>
-                <td></td>
+                <td colspan="2"></td>
               </tr>
             </tfoot>
           </table>
@@ -1092,37 +1115,40 @@ export default function App() {
       .join("\n");
 
     try {
-      // 1. Send to Formspree (for tracking/backup)
-      await fetch(import.meta.env.VITE_FORMSPREE_URL || "https://formspree.io/f/xnjldkek", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          _subject: `Moreno Report - ${adminDateFilter}`,
-          targetEmail: settings.reportEmail,
-          message: reportText,
-          html: reportHtml,
-          summary: `Guests: ${totalPax}`,
-        }),
-      });
-
-      // 2. Send to Google Script
       const GOOGLE_SCRIPT_URL = import.meta.env.VITE_GOOGLE_SCRIPT_URL;
-      if (GOOGLE_SCRIPT_URL) {
-        const params = new URLSearchParams();
-        params.append("command", "sendReport");
-        params.append("targetEmail", settings.reportEmail);
-        params.append("Subject", `Daily Report ${adminDateFilter}`);
-        params.append("ReportContent", reportText);
-        
-        fetch(GOOGLE_SCRIPT_URL, {
-          method: "POST",
-          mode: "no-cors",
-          body: params.toString()
-        }).catch(err => console.error("Report Sheet Error", err));
+      
+      if (!GOOGLE_SCRIPT_URL) {
+        showToast(t.dir === "rtl" ? "يرجى إضافة رابط Google Apps Script في الإعدادات" : "Please add Google Apps Script URL in .env");
+        return;
       }
+
+      const payload = {
+        command: "sendReport",
+        targetEmail: settings.reportEmail,
+        date: adminDateFilter,
+        totalPax: totalPax,
+        bookings: filteredBookings.map(b => ({
+          time: b.time,
+          name: b.name,
+          phone: b.phone,
+          room: b.room,
+          guests: b.guests,
+          restaurant: b.restaurant,
+          resId: b.resId || "",
+          notes: b.notes || ""
+        }))
+      };
+
+      await fetch(GOOGLE_SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify(payload)
+      });
 
       showToast(t.reportSent);
     } catch (e) {
+      console.error(e);
       showToast(t.error);
     }
   }, [filteredBookings, adminDateFilter, settings.reportEmail, t]);
@@ -1146,10 +1172,11 @@ export default function App() {
       const engOrder =
         b.items && b.items.length > 0
           ? b.items
-              .map(
-                (i) =>
-                  `${i.qty}x ${typeof i.name === "string" ? i.name : i.name.en || i.name["en"]}`,
-              )
+              .map((i) => {
+                const m = MENU_ITEMS.find((item) => item.id === i.id);
+                const itemName = m ? (m.name?.en || m.name?.ar || m.name) : i.name || i.id;
+                return `${i.qty}x ${itemName}`;
+              })
               .join(" | ")
           : b.orderDetails
             ? b.orderDetails.replace(/\n/g, " | ").replace(/"/g, "'")
@@ -1400,6 +1427,8 @@ export default function App() {
             src="/logo.webp"
             alt="Moreno"
             className="w-48 md:w-64 relative z-10 drop-shadow-[0_0_30px_rgba(255,167,38,0.3)]"
+            fetchPriority="high"
+            decoding="async"
           />
         </div>
         <div className="flex flex-col items-center gap-6">
@@ -1516,83 +1545,85 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-grow animate-fade-in pt-24 relative max-w-7xl mx-auto w-full px-4 md:px-8">
-        {view === "home" && (
-          <Hero t={t} setView={setView} setToast={setToast} />
-        )}
+        <Suspense fallback={<FallbackLoader view={view} />}>
+          {view === "home" && (
+            <Hero t={t} setView={setView} setToast={setToast} />
+          )}
 
-        {view === "menu" && (
-          <MenuView
-            t={t}
-            lang={lang}
-            activeRestaurantMenu={activeRestaurantMenu}
-            setActiveRestaurantMenu={setActiveRestaurantMenu}
-            addToCart={addToCart}
-            bookingData={bookingData}
-            cart={cart}
-            submitBooking={submitBooking}
-            availableTablesCount={availableTablesCount}
-            setView={setView}
-          />
-        )}
+          {view === "menu" && (
+            <MenuView
+              t={t}
+              lang={lang}
+              activeRestaurantMenu={activeRestaurantMenu}
+              setActiveRestaurantMenu={setActiveRestaurantMenu}
+              addToCart={addToCart}
+              bookingData={bookingData}
+              cart={cart}
+              submitBooking={submitBooking}
+              availableTablesCount={availableTablesCount}
+              setView={setView}
+            />
+          )}
 
-        {view === "book" && (
-          <BookingView
-            t={t}
-            setView={setView}
-            bookingData={bookingData}
-            setBookingData={setBookingData}
-            handleInputChange={handleInputChange}
-            cart={cart}
-            getLocalDate={getLocalDate}
-            settings={settings}
-            availableTablesCount={availableTablesCount}
-            submitBooking={submitBooking}
-          />
-        )}
+          {view === "book" && (
+            <BookingView
+              t={t}
+              setView={setView}
+              bookingData={bookingData}
+              setBookingData={setBookingData}
+              handleInputChange={handleInputChange}
+              cart={cart}
+              getLocalDate={getLocalDate}
+              settings={settings}
+              availableTablesCount={availableTablesCount}
+              submitBooking={submitBooking}
+            />
+          )}
 
-        {view === "track" && <TrackView t={t} bookings={bookings} />}
+          {view === "track" && <TrackView t={t} bookings={bookings} />}
 
-        {view === "success" && <SuccessView t={t} setView={setView} />}
+          {view === "success" && <SuccessView t={t} setView={setView} />}
 
-        {view === "admin" && (
-          <AdminView
-            t={t}
-            isAdminAuth={isAdminAuth}
-            setIsAdminAuth={setIsAdminAuth}
-            adminUser={adminUser}
-            setAdminUser={setAdminUser}
-            adminPass={adminPass}
-            setAdminPass={setAdminPass}
-            handleAdminLogin={handleAdminLogin}
-            adminRole={adminRole}
-            setAdminRole={setAdminRole}
-            currentUser={currentUser}
-            setCurrentUser={setCurrentUser}
-            italianTodayAvail={italianTodayAvail}
-            orientalTodayAvail={orientalTodayAvail}
-            bookings={bookings}
-            todayStr={todayStr}
-            weeklyData={weeklyData}
-            maxWeeklyCount={maxWeeklyCount}
-            adminDateFilter={adminDateFilter}
-            setAdminDateFilter={setAdminDateFilter}
-            printDailyReport={printDailyReport}
-            sendEmailReport={sendEmailReport}
-            exportToExcel={exportToExcel}
-            settings={settings}
-            updateSettingsInDB={updateSettingsInDB}
-            lang={lang}
-            users={users}
-            db={db}
-            showToast={showToast}
-            blacklist={blacklist}
-            adminSearch={adminSearch}
-            setAdminSearch={setAdminSearch}
-            filteredBookings={filteredBookings}
-            printReceipt={printReceipt}
-            MENU_ITEMS={MENU_ITEMS}
-          />
-        )}
+          {view === "admin" && (
+            <AdminView
+              t={t}
+              isAdminAuth={isAdminAuth}
+              setIsAdminAuth={setIsAdminAuth}
+              adminUser={adminUser}
+              setAdminUser={setAdminUser}
+              adminPass={adminPass}
+              setAdminPass={setAdminPass}
+              handleAdminLogin={handleAdminLogin}
+              adminRole={adminRole}
+              setAdminRole={setAdminRole}
+              currentUser={currentUser}
+              setCurrentUser={setCurrentUser}
+              italianTodayAvail={italianTodayAvail}
+              orientalTodayAvail={orientalTodayAvail}
+              bookings={bookings}
+              todayStr={todayStr}
+              weeklyData={weeklyData}
+              maxWeeklyCount={maxWeeklyCount}
+              adminDateFilter={adminDateFilter}
+              setAdminDateFilter={setAdminDateFilter}
+              printDailyReport={printDailyReport}
+              sendEmailReport={sendEmailReport}
+              exportToExcel={exportToExcel}
+              settings={settings}
+              updateSettingsInDB={updateSettingsInDB}
+              lang={lang}
+              users={users}
+              db={db}
+              showToast={showToast}
+              blacklist={blacklist}
+              adminSearch={adminSearch}
+              setAdminSearch={setAdminSearch}
+              filteredBookings={filteredBookings}
+              printReceipt={printReceipt}
+              MENU_ITEMS={MENU_ITEMS}
+            />
+          )}
+        </Suspense>
       </main>
 
       {/* Footer */}

@@ -1,8 +1,8 @@
-import React from "react";
+import React, { memo } from "react";
 import { Plus, Check, ArrowLeft } from "lucide-react";
 import { CATEGORIES, MENU_ITEMS } from "../data";
 
-const MenuView = ({
+const MenuView = memo(({
   t,
   lang,
   activeRestaurantMenu,
@@ -201,6 +201,6 @@ const MenuView = ({
       </div>
     </div>
   );
-};
+});
 
 export default MenuView;

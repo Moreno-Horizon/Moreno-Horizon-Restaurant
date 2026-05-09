@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo, useEffect, useState } from "react";
 import PhoneInput from "react-phone-number-input";
 import "react-phone-number-input/style.css";
 import {
@@ -12,7 +12,7 @@ import {
   Utensils,
 } from "lucide-react";
 
-const BookingView = ({
+function BookingView({
   t,
   setView,
   bookingData,
@@ -23,7 +23,7 @@ const BookingView = ({
   settings,
   availableTablesCount,
   submitBooking,
-}) => {
+}) {
   const canGoToMenu =
     bookingData.name &&
     bookingData.phone &&
@@ -36,7 +36,7 @@ const BookingView = ({
   const paxCount = Number(bookingData.guests || 0);
 
   // Auto-navigate to menu when all data is filled for the first time
-  React.useEffect(() => {
+  useEffect(() => {
     if (canGoToMenu && cart.length === 0) {
       const timer = setTimeout(() => {
         setView("menu");
@@ -342,6 +342,9 @@ const BookingView = ({
       </div>
     </div>
   );
-};
+}
 
-export default BookingView;
+const MemoizedBookingView = memo(BookingView);
+MemoizedBookingView.displayName = "BookingView";
+
+export default MemoizedBookingView;

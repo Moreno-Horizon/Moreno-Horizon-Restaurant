@@ -1,14 +1,11 @@
-import React from "react";
+import React, { memo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   Search,
   BarChart,
   Printer,
   QrCode,
-  Calendar,
-  Clock,
   Users,
-  AlertTriangle,
   CheckCircle,
   XCircle,
   Check,
@@ -28,7 +25,7 @@ import {
 } from "./AdminPanels";
 import { doc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 
-const AdminView = ({
+function AdminView({
   t,
   isAdminAuth,
   setIsAdminAuth,
@@ -64,7 +61,7 @@ const AdminView = ({
   filteredBookings,
   printReceipt,
   MENU_ITEMS,
-}) => {
+}) {
   if (!isAdminAuth) {
     return (
       <div className="max-w-7xl mx-auto py-16 px-4 animate-fade-in">
@@ -81,12 +78,12 @@ const AdminView = ({
   }
 
   const isSuperAdmin = currentUser?.username?.toLowerCase() === "admin";
-  const [editingBooking, setEditingBooking] = React.useState(null);
+  const [editingBooking, setEditingBooking] = useState(null);
 
   const OrderEditorModal = ({ booking, onClose }) => {
-    const [localCart, setLocalCart] = React.useState(booking.items || booking.cart || []);
-    const [deletedItems, setDeletedItems] = React.useState([]);
-    const [localBooking, setLocalBooking] = React.useState({
+    const [localCart, setLocalCart] = useState(booking.items || booking.cart || []);
+    const [deletedItems, setDeletedItems] = useState([]);
+    const [localBooking, setLocalBooking] = useState({
       name: booking.name,
       room: booking.room,
       guests: booking.guests,
@@ -96,8 +93,8 @@ const AdminView = ({
       resId: booking.resId,
       status: booking.status
     });
-    const [itemSearch, setItemSearch] = React.useState("");
-    const [showItemAdder, setShowItemAdder] = React.useState(false);
+    const [itemSearch, setItemSearch] = useState("");
+    const [showItemAdder, setShowItemAdder] = useState(false);
 
     const handleRemoveItem = (index) => {
       const item = localCart[index];
@@ -275,7 +272,7 @@ const AdminView = ({
                         className="flex items-center gap-3 p-2 bg-white rounded-xl border border-stone-100 hover:border-brand-blue transition-all text-start group"
                       >
                         <div className="w-8 h-8 rounded-lg overflow-hidden bg-stone-100 shrink-0">
-                          <img src={item.img} alt="" className="w-full h-full object-cover" />
+                          <img src={item.img} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-[10px] font-black text-brand-blue truncate">
@@ -871,6 +868,9 @@ const AdminView = ({
       </div>
     </div>
   );
-};
+}
 
-export default AdminView;
+const MemoizedAdminView = memo(AdminView);
+MemoizedAdminView.displayName = "AdminView";
+
+export default MemoizedAdminView;

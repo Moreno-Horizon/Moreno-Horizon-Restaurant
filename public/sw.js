@@ -1,6 +1,7 @@
 const CACHE_NAME = 'moreno-horizon-v2'; // Updated version
 const ASSETS_TO_CACHE = [
   '/logo.webp',
+  '/hero-bg.webp',
   '/manifest.json'
 ];
 
