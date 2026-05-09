@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from "react";
+import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy, useRef } from "react";
 import {
   collection,
   doc,
@@ -15,27 +15,15 @@ import {
 import {
   Menu as MenuIcon,
   X,
-  ChevronRight,
-  ChevronLeft,
   ChevronDown,
   Globe,
-  ShoppingCart,
   Plus,
   Check,
-  MapPin,
-  Mail,
   MessageCircle,
-  Lock,
-  Settings,
-  Search,
-  Key,
-  Star,
   Moon,
   Sun,
   Clock,
-  Home,
   Utensils,
-  Loader2
 } from "lucide-react";
 import PhoneInput from "react-phone-number-input";
 import "react-phone-number-input/style.css";
@@ -266,8 +254,7 @@ export default function App() {
     [bookings],
   );
 
-
-  const [lastBookingId, setLastBookingId] = useState(null);
+  const lastBookingIdRef = useRef(null);
   const [settings, setSettings] = useState({
     adminPass: "admin123",
     shift1: "18:30 - 19:30",
@@ -326,20 +313,25 @@ export default function App() {
         }));
         data.sort((a, b) => b.id - a.id);
 
+        const currentLastId = lastBookingIdRef.current;
         if (
           bookingsLoaded &&
-          lastBookingId &&
+          currentLastId &&
           data.length > 0 &&
-          data[0].id > lastBookingId &&
+          data[0].id > currentLastId &&
           localStorage.getItem("morenoAdminAuth") === "true"
         ) {
           playSound("success");
-          showToast(t.newBookingAlert);
+          // Read active language translation dynamically to avoid recreating listeners
+          const currentLang = localStorage.getItem("prefLang") || "ar";
+          const alertMsg = translations[currentLang]?.newBookingAlert || "حجز جديد وارد!";
+          showToast(alertMsg);
         }
-        if (data.length > 0) setLastBookingId(data[0].id);
+        if (data.length > 0) {
+          lastBookingIdRef.current = data[0].id;
+        }
         setBookings(data);
 
-        bookingsLoaded = true;
         bookingsLoaded = true;
         checkLoading();
       },
@@ -377,7 +369,7 @@ export default function App() {
       unsubscribeUsers();
       unsubscribeBlacklist();
     };
-  }, [lastBookingId, t.newBookingAlert, playSound]);
+  }, [todayStr, playSound, showToast]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });

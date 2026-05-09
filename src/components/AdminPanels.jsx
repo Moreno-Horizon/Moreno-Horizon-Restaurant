@@ -643,7 +643,15 @@ export const CustomerDatabasePanel = React.memo(function CustomerDatabasePanel({
   t,
 }) {
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [search]);
 
   const customers = React.useMemo(() => {
     const map = new Map();
@@ -670,14 +678,18 @@ export const CustomerDatabasePanel = React.memo(function CustomerDatabasePanel({
     return Array.from(map.values());
   }, [bookings]);
 
-  const filtered = customers.filter(
-    (c) =>
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.phone.includes(search) ||
-      (c.room && c.room.includes(search)),
-  );
+  const filtered = React.useMemo(() => {
+    return customers.filter(
+      (c) =>
+        c.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        c.phone.includes(debouncedSearch) ||
+        (c.room && c.room.includes(debouncedSearch)),
+    );
+  }, [customers, debouncedSearch]);
 
-  const visibleItems = filtered.slice(0, pageSize);
+  const visibleItems = React.useMemo(() => {
+    return filtered.slice(0, pageSize);
+  }, [filtered, pageSize]);
 
   const exportCSV = () => {
     const headers = ["Name", "Phone", "Last Room", "Total Bookings", "Last Booking"];
