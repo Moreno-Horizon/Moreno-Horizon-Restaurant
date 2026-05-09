@@ -193,6 +193,8 @@ export default {
   nameTooShort: "Name must be at least 3 characters long",
   phoneError: "Invalid phone number (minimum 8 digits required)",
   guestsError: "Please select at least one guest",
+  startDate: "Start Date",
+  endDate: "End Date",
   notesLabel: "Additional Notes (Optional)",
   notesPlaceholder: "Any special requests?",
 };

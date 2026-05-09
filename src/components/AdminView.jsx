@@ -115,8 +115,16 @@ function AdminView({
   const [adminTab, setAdminTab] = useState("all");
   const [adminSearch, setAdminSearch] = useState("");
   const [debouncedAdminSearch, setDebouncedAdminSearch] = useState("");
-  const [adminDateFilter, setAdminDateFilter] = useState(todayStr);
+  const [adminStartDate, setAdminStartDate] = useState(todayStr);
+  const [adminEndDate, setAdminEndDate] = useState(todayStr);
   const [editingBooking, setEditingBooking] = useState(null);
+
+  const dateRangeLabel = useMemo(() => {
+    if (!adminStartDate && !adminEndDate) return "all";
+    if (adminStartDate === adminEndDate) return adminStartDate;
+    if (adminStartDate && adminEndDate) return `${adminStartDate}_to_${adminEndDate}`;
+    return adminStartDate || adminEndDate;
+  }, [adminStartDate, adminEndDate]);
 
   const isSuperAdmin = useMemo(
     () => currentUser?.username?.toLowerCase() === "admin",
@@ -146,10 +154,19 @@ function AdminView({
       const matchesTab = adminTab === "all" || b.status === adminTab;
 
       if (debouncedAdminSearch) return matchesSearch && matchesTab;
-      if (adminDateFilter === "all") return matchesTab;
-      return b.date === adminDateFilter && matchesTab;
+
+      let matchesDate = true;
+      if (adminStartDate && adminEndDate) {
+        matchesDate = b.date >= adminStartDate && b.date <= adminEndDate;
+      } else if (adminStartDate) {
+        matchesDate = b.date >= adminStartDate;
+      } else if (adminEndDate) {
+        matchesDate = b.date <= adminEndDate;
+      }
+
+      return matchesDate && matchesTab;
     });
-  }, [bookings, debouncedAdminSearch, adminTab, adminDateFilter]);
+  }, [bookings, debouncedAdminSearch, adminTab, adminStartDate, adminEndDate]);
 
   // --- Functions ---
   const updateSettingsInDB = useCallback(
@@ -413,7 +430,7 @@ function AdminView({
       const content = `
       <html>
         <head>
-          <title>${reportT.dailyReport}${restaurantTitle} - ${adminDateFilter}</title>
+          <title>${reportT.dailyReport}${restaurantTitle} - ${dateRangeLabel}</title>
           <style>
             @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
             body { font-family: 'Cairo', sans-serif; padding: 40px; direction: ltr; color: #1c1917; }
@@ -433,7 +450,7 @@ function AdminView({
         <body>
           <div class="header">
             <h1>${reportT.dailyReport}${restaurantTitle}</h1>
-            <div class="date">${adminDateFilter}</div>
+            <div class="date">${dateRangeLabel}</div>
           </div>
           
           ${
@@ -462,7 +479,7 @@ function AdminView({
         printWindow.print();
       }, 500);
     },
-    [filteredBookings, adminDateFilter, t, MENU_ITEMS],
+    [filteredBookings, dateRangeLabel, t, MENU_ITEMS],
   );
 
   const sendEmailReport = useCallback(async () => {
@@ -556,7 +573,7 @@ function AdminView({
       const payload = {
         command: "sendReport",
         targetEmail: settings.reportEmail,
-        date: adminDateFilter,
+        date: dateRangeLabel,
         totalPax: totalPax,
         bookings: filteredBookings.map((b) => ({
           time: b.time,
@@ -582,7 +599,7 @@ function AdminView({
       console.error(e);
       showToast(t.error);
     }
-  }, [filteredBookings, adminDateFilter, settings.reportEmail, t]);
+  }, [filteredBookings, dateRangeLabel, settings.reportEmail, t]);
 
   const exportToExcel = useCallback(() => {
     const reportT = translations.en;
@@ -643,12 +660,12 @@ function AdminView({
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
-    link.setAttribute("download", `bookings_${adminDateFilter}.csv`);
+    link.setAttribute("download", `bookings_${dateRangeLabel}.csv`);
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }, [filteredBookings, t, adminDateFilter, MENU_ITEMS]);
+  }, [filteredBookings, t, dateRangeLabel, MENU_ITEMS]);
 
   if (!isAdminAuth) {
     return (
@@ -1107,36 +1124,32 @@ function AdminView({
         </div>
 
         {/* Date Filter & Bulk Print */}
-        <div className="bg-white p-6 md:p-8 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col md:flex-row gap-6 items-center justify-between">
-          <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto">
+        <div className="bg-white p-6 md:p-8 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col xl:flex-row gap-6 items-center justify-between">
+          <div className="flex flex-col lg:flex-row items-center gap-4 w-full xl:w-auto">
             <label className="font-bold text-stone-500 whitespace-nowrap">
               {t.selectDate}:
             </label>
             <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => setAdminDateFilter(todayStr)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${adminDateFilter === todayStr ? "bg-brand-blue text-white" : "bg-stone-50 text-stone-500"}`}
+                onClick={() => {
+                  setAdminStartDate(todayStr);
+                  setAdminEndDate(todayStr);
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
+                  adminStartDate === todayStr && adminEndDate === todayStr
+                    ? "bg-brand-blue text-white shadow-md"
+                    : "bg-stone-50 text-stone-500"
+                }`}
               >
                 {t.today}
               </button>
               <button
                 onClick={() => {
-                  const d = new Date(Date.now() - 86400000);
-                  const local = new Date(
-                    d.getTime() - d.getTimezoneOffset() * 60000,
-                  );
-                  setAdminDateFilter(local.toISOString().split("T")[0]);
+                  setAdminStartDate(yesterdayStr);
+                  setAdminEndDate(yesterdayStr);
                 }}
                 className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
-                  (() => {
-                    const d = new Date(Date.now() - 86400000);
-                    const local = new Date(
-                      d.getTime() - d.getTimezoneOffset() * 60000,
-                    );
-                    return (
-                      adminDateFilter === local.toISOString().split("T")[0]
-                    );
-                  })()
+                  adminStartDate === yesterdayStr && adminEndDate === yesterdayStr
                     ? "bg-brand-blue text-white shadow-md"
                     : "bg-stone-50 text-stone-500"
                 }`}
@@ -1144,18 +1157,44 @@ function AdminView({
                 {t.yesterday}
               </button>
               <button
-                onClick={() => setAdminDateFilter("all")}
-                className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${adminDateFilter === "all" ? "bg-brand-blue text-white shadow-md" : "bg-stone-50 text-stone-500"}`}
+                onClick={() => {
+                  setAdminStartDate("");
+                  setAdminEndDate("");
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
+                  !adminStartDate && !adminEndDate
+                    ? "bg-brand-blue text-white shadow-md"
+                    : "bg-stone-50 text-stone-500"
+                }`}
               >
                 {t.showAll}
               </button>
             </div>
-            <input
-              type="date"
-              value={adminDateFilter === "all" ? "" : adminDateFilter}
-              onChange={(e) => setAdminDateFilter(e.target.value)}
-              className="w-full md:w-auto bg-stone-50 p-3 rounded-xl border border-stone-200 outline-none focus:ring-2 focus:ring-brand-blue font-bold text-stone-700"
-            />
+            <div className="flex items-center gap-2 w-full lg:w-auto">
+              <div className="flex flex-col w-full lg:w-auto">
+                <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider mb-1 px-1">
+                  {t.startDate}
+                </span>
+                <input
+                  type="date"
+                  value={adminStartDate}
+                  onChange={(e) => setAdminStartDate(e.target.value)}
+                  className="w-full lg:w-auto bg-stone-50 p-3 rounded-xl border border-stone-200 outline-none focus:ring-2 focus:ring-brand-blue font-bold text-stone-700 text-sm"
+                />
+              </div>
+              <span className="text-stone-400 font-bold mt-4 shrink-0 px-1">→</span>
+              <div className="flex flex-col w-full lg:w-auto">
+                <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider mb-1 px-1">
+                  {t.endDate}
+                </span>
+                <input
+                  type="date"
+                  value={adminEndDate}
+                  onChange={(e) => setAdminEndDate(e.target.value)}
+                  className="w-full lg:w-auto bg-stone-50 p-3 rounded-xl border border-stone-200 outline-none focus:ring-2 focus:ring-brand-blue font-bold text-stone-700 text-sm"
+                />
+              </div>
+            </div>
           </div>
           <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
             <button
