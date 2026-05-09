@@ -903,11 +903,7 @@ export default function App() {
         })
       : filteredBookings;
 
-    if (bookingsToPrint.length === 0) {
-      showToast(t.noBookings || "لا توجد حجوزات لهذا التصنيف");
-      return;
-    }
-
+    // Removed early return to allow empty templates to print
     const totalPax = bookingsToPrint.reduce(
       (sum, b) => sum + (parseInt(b.guests) || 0),
       0,
