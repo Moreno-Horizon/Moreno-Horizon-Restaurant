@@ -36,16 +36,6 @@ function BookingView({
   const totalItems = cart.reduce((sum, item) => sum + item.qty, 0);
   const paxCount = Number(bookingData.guests || 0);
 
-  // Auto-navigate to menu when all data is filled for the first time
-  useEffect(() => {
-    if (canGoToMenu && cart.length === 0) {
-      const timer = setTimeout(() => {
-        setView("menu");
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [canGoToMenu, setView, cart.length]);
-
   return (
     <div className="max-w-4xl mx-auto py-16 px-4 animate-fade-in">
       <div className="bg-white p-8 md:p-14 rounded-[2rem] md:rounded-[3.5rem] shadow-xl border border-stone-100 relative overflow-hidden">
@@ -117,7 +107,10 @@ function BookingView({
 
             <form
               className="space-y-6 md:space-y-8"
-              onSubmit={submitBooking}
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (canGoToMenu) setView("menu");
+              }}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="relative">
