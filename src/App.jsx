@@ -685,9 +685,13 @@ export default function App() {
       }
 
       let orderDetails = t.noFoodOrders;
+      let engOrderDetails = "No Food Orders";
       if (cart.length > 0) {
         orderDetails = cart
           .map((item) => `- ${item.qty}x ${item.name[lang] || item.name["en"]}`)
+          .join("\n");
+        engOrderDetails = cart
+          .map((item) => `- ${item.qty}x ${item.name["en"] || item.name["ar"] || item.name}`)
           .join("\n");
       }
 
@@ -707,6 +711,7 @@ export default function App() {
         guests: bookingData.guests || "2",
         status: overrideStatus || "pending",
         orderDetails: orderDetails,
+        engOrderDetails: engOrderDetails,
         total: 0,
         items: cart,
       };
@@ -732,54 +737,26 @@ export default function App() {
         console.error("Firebase Error:", e);
       }
 
-      // Send to Google Sheets
+      // Send to Google Sheets (Master Database)
       const GOOGLE_SCRIPT_URL = import.meta.env.VITE_GOOGLE_SCRIPT_URL;
-
-      const formData = new FormData();
-      formData.append("Name", bookingData.name);
-      formData.append("Phone", bookingData.phone);
-      formData.append("Room", bookingData.room);
-      formData.append("Restaurant", resName);
-      formData.append("Date", bookingData.date);
-      formData.append("Time", bookingData.time);
-      formData.append("Guests", bookingData.guests || "2");
-      formData.append("Order", orderDetails);
-
-      fetch(GOOGLE_SCRIPT_URL, {
-        method: "POST",
-        mode: "no-cors",
-        body: formData,
-      }).catch((err) => console.error("Sheet Error", err));
-
-      // Send via Formspree
-      const FORMSPREE_URL = import.meta.env.VITE_FORMSPREE_URL;
       showToast(t.savingReservation);
 
       try {
-        const response = await fetch(FORMSPREE_URL, {
+        const response = await fetch(GOOGLE_SCRIPT_URL, {
           method: "POST",
+          mode: "no-cors",
           headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
+            "Content-Type": "text/plain;charset=utf-8",
           },
           body: JSON.stringify({
-            _subject: `حجز جديد من ${bookingData.name} - Moreno Horizon`,
-            الاسم: bookingData.name,
-            "رقم الهاتف": bookingData.phone,
-            "رقم الغرفة": bookingData.room,
-            المطعم: resName,
-            التاريخ: bookingData.date,
-            الوقت: bookingData.time,
-            "عدد الأفراد": bookingData.guests || "2",
-            "تفاصيل الطلب": orderDetails,
+            command: "newBooking",
+            booking: newBooking
           }),
         });
-
-        if (response.ok) {
-          console.log("Formspree Success");
-        }
+        
+        console.log("Master Sheet Sync Triggered");
       } catch (error) {
-        console.error("Submission error:", error);
+        console.error("Sheet Sync error:", error);
       } finally {
         setTimeout(() => setView("success"), 1000);
       }
