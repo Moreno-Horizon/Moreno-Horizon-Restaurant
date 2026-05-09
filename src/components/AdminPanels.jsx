@@ -701,6 +701,71 @@ export const CustomerDatabasePanel = React.memo(function CustomerDatabasePanel({
     document.body.removeChild(link);
   };
 
+  const printCustomerDatabase = () => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+
+    const content = `
+      <html>
+        <head>
+          <title>Customer Database - Moreno Horizon</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
+            body { font-family: 'Cairo', sans-serif; padding: 40px; direction: ltr; color: #1c1917; }
+            .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #e7e5e4; padding-bottom: 20px; }
+            h1 { margin: 0; font-size: 24px; color: #1c1917; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+            th, td { border: 1px solid #e7e5e4; padding: 10px 8px; text-align: left; }
+            th { background-color: #f5f5f4; font-weight: bold; }
+            .footer { margin-top: 40px; text-align: center; font-size: 10px; color: #a8a29e; border-top: 1px solid #e7e5e4; padding-top: 20px; }
+            @page { size: auto; margin: 0mm; }
+            body { margin: 15mm; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Customer Database</h1>
+            <p style="color: #78716c; margin-top: 5px;">Total Customers: ${filtered.length}</p>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Phone Number</th>
+                <th>Last Room</th>
+                <th style="text-align: center;">Total Bookings</th>
+                <th>Last Booking Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filtered.length === 0 ? `<tr><td colspan="5" style="text-align: center; font-style: italic; color: #888; padding: 15px;">No customers found</td></tr>` : 
+                filtered.map(c => `
+                  <tr>
+                    <td style="font-weight: bold; color: #2563eb;">${c.name}</td>
+                    <td>${c.phone}</td>
+                    <td style="font-weight: bold;">${c.room || "-"}</td>
+                    <td style="text-align: center; font-weight: bold;">${c.bookingCount}</td>
+                    <td>${c.lastBooking}</td>
+                  </tr>
+                `).join('')
+              }
+            </tbody>
+          </table>
+          <div class="footer">
+            <p>© ${new Date().getFullYear()} Moreno Horizon SPA & RESORT</p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(content);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 500);
+  };
+
   return (
     <div className="bg-white rounded-[2rem] shadow-xl overflow-hidden border border-stone-100 mt-12 animate-fade-in print-section">
       <div className="p-8 border-b border-stone-100 bg-stone-50/50 flex flex-col xl:flex-row justify-between items-center gap-6 no-print">
@@ -719,7 +784,7 @@ export const CustomerDatabasePanel = React.memo(function CustomerDatabasePanel({
               Excel (CSV)
             </button>
             <button 
-              onClick={() => window.print()}
+              onClick={printCustomerDatabase}
               className="flex-1 md:flex-none bg-brand-blue/5 text-brand-blue px-4 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-brand-blue hover:text-white transition-all border border-brand-blue/10 shadow-sm"
             >
               <Printer size={16} />
