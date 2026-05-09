@@ -696,6 +696,7 @@ function AdminView({
       restaurant: booking.restaurant,
       resId: booking.resId,
       status: booking.status,
+      notes: booking.notes || "",
     });
     const [itemSearch, setItemSearch] = useState("");
     const [showItemAdder, setShowItemAdder] = useState(false);
@@ -894,6 +895,22 @@ function AdminView({
                   className="w-full bg-stone-50 border border-stone-100 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-brand-orange font-bold text-brand-blue"
                 />
               </div>
+            </div>
+
+            {/* Additional Comments */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 px-1">
+                {t.comments}
+              </label>
+              <textarea
+                value={localBooking.notes}
+                onChange={(e) =>
+                  setLocalBooking({ ...localBooking, notes: e.target.value })
+                }
+                rows={3}
+                className="w-full bg-stone-50 border border-stone-100 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-brand-orange font-bold text-brand-blue resize-none custom-scrollbar text-sm"
+                placeholder={t.comments}
+              />
             </div>
 
             {/* Food Items Section */}
