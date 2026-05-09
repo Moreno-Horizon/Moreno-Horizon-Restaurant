@@ -23,7 +23,17 @@ import {
   BestSellersChart,
   CustomerDatabasePanel,
 } from "./AdminPanels";
-import { doc, updateDoc, deleteDoc, serverTimestamp, query, collection, where, getDocs, setDoc } from "firebase/firestore";
+import {
+  doc,
+  updateDoc,
+  deleteDoc,
+  serverTimestamp,
+  query,
+  collection,
+  where,
+  getDocs,
+  setDoc,
+} from "firebase/firestore";
 import { translations } from "../translations";
 
 function AdminView({
@@ -44,19 +54,22 @@ function AdminView({
 }) {
   // --- Admin Auth & User States ---
   const [isAdminAuth, setIsAdminAuth] = useState(
-    () => localStorage.getItem("morenoAdminAuth") === "true"
+    () => localStorage.getItem("morenoAdminAuth") === "true",
   );
   const [currentUser, setCurrentUser] = useState(() =>
-    JSON.parse(localStorage.getItem("morenoCurrentUser") || "null")
+    JSON.parse(localStorage.getItem("morenoCurrentUser") || "null"),
   );
   const [adminRole, setAdminRole] = useState(() =>
-    localStorage.getItem("morenoAdminRole")
+    localStorage.getItem("morenoAdminRole"),
   ); // 'main' or 'staff'
   const [adminUser, setAdminUser] = useState("");
   const [adminPass, setAdminPass] = useState("");
 
   const handleAdminLogin = async () => {
-    if (adminUser.toLowerCase() === "admin" && adminPass === settings.adminPass) {
+    if (
+      adminUser.toLowerCase() === "admin" &&
+      adminPass === settings.adminPass
+    ) {
       const adminData = { name: "Admin", username: "admin", role: "main" };
       setAdminRole("main");
       setCurrentUser(adminData);
@@ -72,7 +85,7 @@ function AdminView({
       const userQuery = query(
         collection(db, "users"),
         where("username", "==", adminUser),
-        where("password", "==", adminPass)
+        where("password", "==", adminPass),
       );
       const userSnap = await getDocs(userQuery);
       if (!userSnap.empty) {
@@ -104,6 +117,11 @@ function AdminView({
   const [debouncedAdminSearch, setDebouncedAdminSearch] = useState("");
   const [adminDateFilter, setAdminDateFilter] = useState(todayStr);
   const [editingBooking, setEditingBooking] = useState(null);
+
+  const isSuperAdmin = useMemo(
+    () => currentUser?.username?.toLowerCase() === "admin",
+    [currentUser],
+  );
 
   // Pre-compute yesterday once — avoids 3x inline computation per render
   const yesterdayStr = useMemo(() => {
@@ -138,17 +156,22 @@ function AdminView({
     async (newSettings) => {
       try {
         const sanitizedSettings = Object.fromEntries(
-          Object.entries(newSettings).filter(([_, v]) => v !== undefined)
+          Object.entries(newSettings).filter(([_, v]) => v !== undefined),
         );
-        
+
         // Timeout wrapper for setDoc to prevent infinite hang
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("Timeout: Firebase connection blocked")), 8000)
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Timeout: Firebase connection blocked")),
+            8000,
+          ),
         );
 
         await Promise.race([
-          setDoc(doc(db, "settings", "general"), sanitizedSettings, { merge: true }),
-          timeoutPromise
+          setDoc(doc(db, "settings", "general"), sanitizedSettings, {
+            merge: true,
+          }),
+          timeoutPromise,
         ]);
 
         showToast(t.settingsUpdated || "تم حفظ الإعدادات بنجاح!");
@@ -157,7 +180,7 @@ function AdminView({
         showToast(t.errorSavingSettings || "حدث خطأ أثناء حفظ الإعدادات");
       }
     },
-    [t, db, showToast]
+    [t, db, showToast],
   );
 
   const printReceipt = useCallback(
@@ -250,43 +273,64 @@ function AdminView({
         showToast(t.allowPopups);
       }
     },
-    [t, lang]
+    [t, lang],
   );
 
-  const printDailyReport = useCallback((restaurantId = null) => {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) {
-      showToast(t.allowPopups);
-      return;
-    }
+  const printDailyReport = useCallback(
+    (restaurantId = null) => {
+      const printWindow = window.open("", "_blank");
+      if (!printWindow) {
+        showToast(t.allowPopups);
+        return;
+      }
 
-    const reportT = translations.en;
-    const isItalianBooking = (b) => {
-      const rId = (b.resId || "").toLowerCase();
-      const rName = (b.restaurant || "").toLowerCase();
-      return rId === 'italian' || rName.includes('italian') || rName.includes('إيطالي') || rName.includes('ايطالي');
-    };
-    const isOrientalBooking = (b) => {
-      const rId = (b.resId || "").toLowerCase();
-      const rName = (b.restaurant || "").toLowerCase();
-      return rId === 'oriental' || rName.includes('oriental') || rName.includes('شرقي') || rName.includes('عربي');
-    };
+      const reportT = translations.en;
+      const isItalianBooking = (b) => {
+        const rId = (b.resId || "").toLowerCase();
+        const rName = (b.restaurant || "").toLowerCase();
+        return (
+          rId === "italian" ||
+          rName.includes("italian") ||
+          rName.includes("إيطالي") ||
+          rName.includes("ايطالي")
+        );
+      };
+      const isOrientalBooking = (b) => {
+        const rId = (b.resId || "").toLowerCase();
+        const rName = (b.restaurant || "").toLowerCase();
+        return (
+          rId === "oriental" ||
+          rName.includes("oriental") ||
+          rName.includes("شرقي") ||
+          rName.includes("عربي")
+        );
+      };
 
-    const bookingsToPrint = restaurantId 
-      ? filteredBookings.filter(b => {
-          if (restaurantId === 'italian') return isItalianBooking(b);
-          if (restaurantId === 'oriental') return isOrientalBooking(b);
-          return true;
-        })
-      : filteredBookings;
+      const bookingsToPrint = restaurantId
+        ? filteredBookings.filter((b) => {
+            if (restaurantId === "italian") return isItalianBooking(b);
+            if (restaurantId === "oriental") return isOrientalBooking(b);
+            return true;
+          })
+        : filteredBookings;
 
-    const totalPax = bookingsToPrint.reduce((sum, b) => sum + (parseInt(b.guests) || 0), 0);
-    const restaurantTitle = restaurantId ? (restaurantId === 'italian' ? ' - Italian Restaurant' : ' - Oriental Restaurant') : '';
+      const totalPax = bookingsToPrint.reduce(
+        (sum, b) => sum + (parseInt(b.guests) || 0),
+        0,
+      );
+      const restaurantTitle = restaurantId
+        ? restaurantId === "italian"
+          ? " - Italian Restaurant"
+          : " - Oriental Restaurant"
+        : "";
 
-    const renderTable = (items, title) => {
-      const pax = items.reduce((sum, b) => sum + (parseInt(b.guests) || 0), 0);
-      
-      return `
+      const renderTable = (items, title) => {
+        const pax = items.reduce(
+          (sum, b) => sum + (parseInt(b.guests) || 0),
+          0,
+        );
+
+        return `
         <div style="margin-top: 30px;">
           <h2 style="font-size: 18px; border-bottom: 1px solid #ddd; padding-bottom: 5px;">${title}</h2>
           <table>
@@ -302,23 +346,38 @@ function AdminView({
               </tr>
             </thead>
             <tbody>
-              ${items.length === 0 ? `<tr><td colspan="7" style="text-align: center; font-style: italic; color: #888; padding: 15px;">No bookings</td></tr>` : items
-                .map((b) => {
-                  const engStatus =
-                    b.status === "pending" ? "Pending" : 
-                    b.status === "confirmed" ? "Confirmed" : 
-                    b.status === "waitlist" ? "Waitlist" : 
-                    b.status === "cancelled" ? "Cancelled" : "Completed";
+              ${
+                items.length === 0
+                  ? `<tr><td colspan="7" style="text-align: center; font-style: italic; color: #888; padding: 15px;">No bookings</td></tr>`
+                  : items
+                      .map((b) => {
+                        const engStatus =
+                          b.status === "pending"
+                            ? "Pending"
+                            : b.status === "confirmed"
+                              ? "Confirmed"
+                              : b.status === "waitlist"
+                                ? "Waitlist"
+                                : b.status === "cancelled"
+                                  ? "Cancelled"
+                                  : "Completed";
 
-                  const engOrder = b.items && b.items.length > 0
-                    ? b.items.map(i => {
-                        const m = MENU_ITEMS.find(item => item.id === i.id);
-                        const itemName = m ? (m.name?.en || m.name?.ar || m.name) : i.name || i.id;
-                        return `<b>${i.qty}x</b> ${itemName}`;
-                      }).join("<br/>")
-                    : "-";
+                        const engOrder =
+                          b.items && b.items.length > 0
+                            ? b.items
+                                .map((i) => {
+                                  const m = MENU_ITEMS.find(
+                                    (item) => item.id === i.id,
+                                  );
+                                  const itemName = m
+                                    ? m.name?.en || m.name?.ar || m.name
+                                    : i.name || i.id;
+                                  return `<b>${i.qty}x</b> ${itemName}`;
+                                })
+                                .join("<br/>")
+                            : "-";
 
-                  return `
+                        return `
                       <tr>
                         <td>${b.time}</td>
                         <td>${b.name}</td>
@@ -329,8 +388,9 @@ function AdminView({
                         <td>${engStatus}</td>
                       </tr>
                     `;
-                })
-                .join("")}
+                      })
+                      .join("")
+              }
             </tbody>
             <tfoot>
               <tr class="total-row">
@@ -342,13 +402,15 @@ function AdminView({
           </table>
         </div>
       `;
-    };
+      };
 
-    const italianBookings = bookingsToPrint.filter(isItalianBooking);
-    const orientalBookings = bookingsToPrint.filter(isOrientalBooking);
-    const otherBookings = bookingsToPrint.filter(b => !isItalianBooking(b) && !isOrientalBooking(b));
+      const italianBookings = bookingsToPrint.filter(isItalianBooking);
+      const orientalBookings = bookingsToPrint.filter(isOrientalBooking);
+      const otherBookings = bookingsToPrint.filter(
+        (b) => !isItalianBooking(b) && !isOrientalBooking(b),
+      );
 
-    const content = `
+      const content = `
       <html>
         <head>
           <title>${reportT.dailyReport}${restaurantTitle} - ${adminDateFilter}</title>
@@ -374,9 +436,12 @@ function AdminView({
             <div class="date">${adminDateFilter}</div>
           </div>
           
-          ${restaurantId === 'italian' ? renderTable(italianBookings, "Italian Restaurant") : 
-            restaurantId === 'oriental' ? renderTable(orientalBookings, "Oriental Restaurant") :
-            `
+          ${
+            restaurantId === "italian"
+              ? renderTable(italianBookings, "Italian Restaurant")
+              : restaurantId === "oriental"
+                ? renderTable(orientalBookings, "Oriental Restaurant")
+                : `
               ${renderTable(italianBookings, "Italian Restaurant")}
               ${renderTable(orientalBookings, "Oriental Restaurant")}
               ${renderTable(otherBookings, "Other Bookings")}
@@ -390,13 +455,15 @@ function AdminView({
       </html>
     `;
 
-    printWindow.document.write(content);
-    printWindow.document.close();
-    setTimeout(() => {
-      printWindow.focus();
-      printWindow.print();
-    }, 500);
-  }, [filteredBookings, adminDateFilter, t, MENU_ITEMS]);
+      printWindow.document.write(content);
+      printWindow.document.close();
+      setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+      }, 500);
+    },
+    [filteredBookings, adminDateFilter, t, MENU_ITEMS],
+  );
 
   const sendEmailReport = useCallback(async () => {
     if (!settings.reportEmail) {
@@ -405,24 +472,37 @@ function AdminView({
     }
 
     showToast(t.savingReservation);
-    
+
     const isItalianBooking = (b) => {
       const rId = (b.resId || "").toLowerCase();
       const rName = (b.restaurant || "").toLowerCase();
-      return rId === 'italian' || rName.includes('italian') || rName.includes('إيطالي') || rName.includes('ايطالي');
+      return (
+        rId === "italian" ||
+        rName.includes("italian") ||
+        rName.includes("إيطالي") ||
+        rName.includes("ايطالي")
+      );
     };
 
     const isOrientalBooking = (b) => {
       const rId = (b.resId || "").toLowerCase();
       const rName = (b.restaurant || "").toLowerCase();
-      return rId === 'oriental' || rName.includes('oriental') || rName.includes('شرقي') || rName.includes('عربي');
+      return (
+        rId === "oriental" ||
+        rName.includes("oriental") ||
+        rName.includes("شرقي") ||
+        rName.includes("عربي")
+      );
     };
 
     const italianBookings = filteredBookings.filter(isItalianBooking);
     const orientalBookings = filteredBookings.filter(isOrientalBooking);
-    const otherBookings = filteredBookings.filter(b => !isItalianBooking(b) && !isOrientalBooking(b));
+    const otherBookings = filteredBookings.filter(
+      (b) => !isItalianBooking(b) && !isOrientalBooking(b),
+    );
 
-    const calculatePax = (items) => items.reduce((sum, b) => sum + (parseInt(b.guests) || 0), 0);
+    const calculatePax = (items) =>
+      items.reduce((sum, b) => sum + (parseInt(b.guests) || 0), 0);
     const totalPax = calculatePax(filteredBookings);
 
     const renderEmailTable = (items, title) => {
@@ -440,7 +520,12 @@ function AdminView({
             </tr>
           </thead>
           <tbody>
-            ${items.length === 0 ? `<tr><td colspan="5" style="text-align: center; padding: 15px; color: #888; border: 1px solid #eee; font-style: italic;">No bookings</td></tr>` : items.map(b => `
+            ${
+              items.length === 0
+                ? `<tr><td colspan="5" style="text-align: center; padding: 15px; color: #888; border: 1px solid #eee; font-style: italic;">No bookings</td></tr>`
+                : items
+                    .map(
+                      (b) => `
               <tr>
                 <td style="padding: 10px; border: 1px solid #eee;">${b.name}</td>
                 <td style="padding: 10px; border: 1px solid #eee;">${b.room}</td>
@@ -448,7 +533,10 @@ function AdminView({
                 <td style="padding: 10px; border: 1px solid #eee;">${b.time}</td>
                 <td style="padding: 10px; border: 1px solid #eee; font-size: 12px;">${b.notes || "-"}</td>
               </tr>
-            `).join("")}
+            `,
+                    )
+                    .join("")
+            }
           </tbody>
         </table>
       `;
@@ -457,7 +545,11 @@ function AdminView({
     try {
       const GOOGLE_SCRIPT_URL = import.meta.env.VITE_GOOGLE_SCRIPT_URL;
       if (!GOOGLE_SCRIPT_URL) {
-        showToast(t.dir === "rtl" ? "يرجى إضافة رابط Google Apps Script في الإعدادات" : "Please add Google Apps Script URL in .env");
+        showToast(
+          t.dir === "rtl"
+            ? "يرجى إضافة رابط Google Apps Script في الإعدادات"
+            : "Please add Google Apps Script URL in .env",
+        );
         return;
       }
 
@@ -466,7 +558,7 @@ function AdminView({
         targetEmail: settings.reportEmail,
         date: adminDateFilter,
         totalPax: totalPax,
-        bookings: filteredBookings.map(b => ({
+        bookings: filteredBookings.map((b) => ({
           time: b.time,
           name: b.name,
           phone: b.phone,
@@ -474,15 +566,15 @@ function AdminView({
           guests: b.guests,
           restaurant: b.restaurant,
           resId: b.resId || "",
-          notes: b.notes || ""
-        }))
+          notes: b.notes || "",
+        })),
       };
 
       await fetch(GOOGLE_SCRIPT_URL, {
         method: "POST",
         mode: "no-cors",
         headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
 
       showToast(t.reportSent);
@@ -512,7 +604,9 @@ function AdminView({
           ? b.items
               .map((i) => {
                 const m = MENU_ITEMS.find((item) => item.id === i.id);
-                const itemName = m ? (m.name?.en || m.name?.ar || m.name) : i.name || i.id;
+                const itemName = m
+                  ? m.name?.en || m.name?.ar || m.name
+                  : i.name || i.id;
                 return `${i.qty}x ${itemName}`;
               })
               .join(" | ")
@@ -571,13 +665,10 @@ function AdminView({
     );
   }
 
-  const isSuperAdmin = useMemo(
-    () => currentUser?.username?.toLowerCase() === "admin",
-    [currentUser]
-  );
-
   const OrderEditorModal = ({ booking, onClose }) => {
-    const [localCart, setLocalCart] = useState(booking.items || booking.cart || []);
+    const [localCart, setLocalCart] = useState(
+      booking.items || booking.cart || [],
+    );
     const [deletedItems, setDeletedItems] = useState([]);
     const [localBooking, setLocalBooking] = useState({
       name: booking.name,
@@ -587,7 +678,7 @@ function AdminView({
       time: booking.time,
       restaurant: booking.restaurant,
       resId: booking.resId,
-      status: booking.status
+      status: booking.status,
     });
     const [itemSearch, setItemSearch] = useState("");
     const [showItemAdder, setShowItemAdder] = useState(false);
@@ -601,15 +692,19 @@ function AdminView({
     const handleAddItem = (item) => {
       const currentTotal = localCart.reduce((sum, i) => sum + i.qty, 0);
       const pax = parseInt(localBooking.guests) || 0;
-      
+
       if (currentTotal >= pax) {
         showToast(t.paxLimitReached || "Pax limit reached");
         return;
       }
 
-      const existing = localCart.find(i => i.id === item.id);
+      const existing = localCart.find((i) => i.id === item.id);
       if (existing) {
-        setLocalCart(localCart.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i));
+        setLocalCart(
+          localCart.map((i) =>
+            i.id === item.id ? { ...i, qty: i.qty + 1 } : i,
+          ),
+        );
       } else {
         setLocalCart([...localCart, { ...item, qty: 1 }]);
       }
@@ -620,18 +715,25 @@ function AdminView({
       try {
         const currentTotal = localCart.reduce((sum, i) => sum + i.qty, 0);
         const pax = parseInt(localBooking.guests) || 0;
-        
+
         // Ensure items don't exceed pax if there are items
         if (localCart.length > 0 && currentTotal > pax) {
-           showToast(t.paxLimitReached || "Total items exceed pax count");
-           return;
+          showToast(t.paxLimitReached || "Total items exceed pax count");
+          return;
         }
 
-        const orderSummary = localCart.map(i => `${i.qty}x ${typeof i.name === 'string' ? i.name : (i.name[lang] || i.name['en'])}`).join(', ');
+        const orderSummary = localCart
+          .map(
+            (i) =>
+              `${i.qty}x ${typeof i.name === "string" ? i.name : i.name[lang] || i.name["en"]}`,
+          )
+          .join(", ");
         await updateDoc(doc(db, "bookings", booking.id.toString()), {
           ...localBooking,
           items: localCart,
-          orderDetails: orderSummary || (lang === 'ar' ? 'لا يوجد طلب طعام' : 'No food order'),
+          orderDetails:
+            orderSummary ||
+            (lang === "ar" ? "لا يوجد طلب طعام" : "No food order"),
           updatedBy: currentUser.name,
           updatedAt: serverTimestamp(),
         });
@@ -643,16 +745,27 @@ function AdminView({
       }
     };
 
-    const filteredMenuItems = MENU_ITEMS.filter(item => {
-      const resMatch = localBooking.resId ? item.restaurant === localBooking.resId : true;
-      const searchMatch = itemSearch === "" || 
-        (typeof item.name === 'string' ? item.name : (item.name[lang] || item.name['en'])).toLowerCase().includes(itemSearch.toLowerCase());
+    const filteredMenuItems = MENU_ITEMS.filter((item) => {
+      const resMatch = localBooking.resId
+        ? item.restaurant === localBooking.resId
+        : true;
+      const searchMatch =
+        itemSearch === "" ||
+        (typeof item.name === "string"
+          ? item.name
+          : item.name[lang] || item.name["en"]
+        )
+          .toLowerCase()
+          .includes(itemSearch.toLowerCase());
       return resMatch && searchMatch;
     });
 
     return (
       <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
+        <div
+          className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+          onClick={onClose}
+        ></div>
         <div className="relative bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-scale-in flex flex-col max-h-[90vh]">
           <div className="p-8 bg-stone-50 border-b border-stone-100 flex justify-between items-center shrink-0">
             <div>
@@ -663,30 +776,48 @@ function AdminView({
                 {t.updateBookingData}
               </p>
             </div>
-            <button onClick={onClose} className="p-3 hover:bg-stone-200 rounded-full transition-all text-stone-400">
+            <button
+              onClick={onClose}
+              className="p-3 hover:bg-stone-200 rounded-full transition-all text-stone-400"
+            >
               <XCircle size={24} />
             </button>
           </div>
-          
+
           <div className="p-8 overflow-y-auto space-y-8 flex-1 custom-scrollbar">
             {/* Status Selector */}
             <div className="space-y-3">
-              <label className="text-[10px] font-black uppercase tracking-widest text-brand-orange px-1">{t.status}</label>
+              <label className="text-[10px] font-black uppercase tracking-widest text-brand-orange px-1">
+                {t.status}
+              </label>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                {['pending', 'confirmed', 'waitlist', 'completed', 'cancelled'].map(s => (
+                {[
+                  "pending",
+                  "confirmed",
+                  "waitlist",
+                  "completed",
+                  "cancelled",
+                ].map((s) => (
                   <button
                     key={s}
-                    onClick={() => setLocalBooking({...localBooking, status: s})}
+                    onClick={() =>
+                      setLocalBooking({ ...localBooking, status: s })
+                    }
                     className={`px-4 py-3 rounded-xl text-xs font-black transition-all border ${
-                      localBooking.status === s 
-                        ? 'bg-brand-blue text-white border-brand-blue shadow-md' 
-                        : 'bg-white text-stone-400 border-stone-100 hover:border-stone-200'
+                      localBooking.status === s
+                        ? "bg-brand-blue text-white border-brand-blue shadow-md"
+                        : "bg-white text-stone-400 border-stone-100 hover:border-stone-200"
                     }`}
                   >
-                    {s === 'pending' ? t.statusPending : 
-                     s === 'confirmed' ? t.statusConfirmed : 
-                     s === 'waitlist' ? t.statusWaitlist : 
-                     s === 'completed' ? t.statusCompleted : t.statusCancelled}
+                    {s === "pending"
+                      ? t.statusPending
+                      : s === "confirmed"
+                        ? t.statusConfirmed
+                        : s === "waitlist"
+                          ? t.statusWaitlist
+                          : s === "completed"
+                            ? t.statusCompleted
+                            : t.statusCancelled}
                   </button>
                 ))}
               </div>
@@ -695,38 +826,54 @@ function AdminView({
             {/* Core Details Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 px-1">{t.name}</label>
-                <input 
-                  type="text" 
+                <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 px-1">
+                  {t.name}
+                </label>
+                <input
+                  type="text"
                   value={localBooking.name}
-                  onChange={(e) => setLocalBooking({...localBooking, name: e.target.value})}
+                  onChange={(e) =>
+                    setLocalBooking({ ...localBooking, name: e.target.value })
+                  }
                   className="w-full bg-stone-50 border border-stone-100 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-brand-orange font-bold text-brand-blue"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 px-1">{t.room}</label>
-                <input 
-                  type="text" 
+                <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 px-1">
+                  {t.room}
+                </label>
+                <input
+                  type="text"
                   value={localBooking.room}
-                  onChange={(e) => setLocalBooking({...localBooking, room: e.target.value})}
+                  onChange={(e) =>
+                    setLocalBooking({ ...localBooking, room: e.target.value })
+                  }
                   className="w-full bg-stone-50 border border-stone-100 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-brand-orange font-bold text-brand-blue"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 px-1">{t.guests}</label>
-                <input 
-                  type="number" 
+                <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 px-1">
+                  {t.guests}
+                </label>
+                <input
+                  type="number"
                   value={localBooking.guests}
-                  onChange={(e) => setLocalBooking({...localBooking, guests: e.target.value})}
+                  onChange={(e) =>
+                    setLocalBooking({ ...localBooking, guests: e.target.value })
+                  }
                   className="w-full bg-stone-50 border border-stone-100 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-brand-orange font-bold text-brand-blue"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 px-1">{t.time}</label>
-                <input 
-                  type="text" 
+                <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 px-1">
+                  {t.time}
+                </label>
+                <input
+                  type="text"
                   value={localBooking.time}
-                  onChange={(e) => setLocalBooking({...localBooking, time: e.target.value})}
+                  onChange={(e) =>
+                    setLocalBooking({ ...localBooking, time: e.target.value })
+                  }
                   className="w-full bg-stone-50 border border-stone-100 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-brand-orange font-bold text-brand-blue"
                 />
               </div>
@@ -736,10 +883,13 @@ function AdminView({
             <div className="space-y-4">
               <div className="flex justify-between items-center border-b border-stone-100 pb-2">
                 <h4 className="text-sm font-black uppercase tracking-[0.2em] text-brand-orange">
-                  {t.foodItems} 
-                  <span className="ms-2 text-[10px] text-stone-400">({localCart.reduce((sum, i) => sum + i.qty, 0)} / {localBooking.guests} PAX)</span>
+                  {t.foodItems}
+                  <span className="ms-2 text-[10px] text-stone-400">
+                    ({localCart.reduce((sum, i) => sum + i.qty, 0)} /{" "}
+                    {localBooking.guests} PAX)
+                  </span>
                 </h4>
-                <button 
+                <button
                   onClick={() => setShowItemAdder(!showItemAdder)}
                   className="flex items-center gap-1 text-xs font-black text-brand-blue hover:text-brand-orange transition-all"
                 >
@@ -751,32 +901,48 @@ function AdminView({
               {showItemAdder && (
                 <div className="bg-stone-50 p-4 rounded-3xl border border-stone-100 space-y-4 animate-fade-in">
                   <div className="relative">
-                    <input 
+                    <input
                       type="text"
                       placeholder={t.searchDish || "Search dish..."}
                       value={itemSearch}
                       onChange={(e) => setItemSearch(e.target.value)}
                       className="w-full p-3 ps-10 rounded-xl border border-stone-200 outline-none focus:ring-2 focus:ring-brand-blue text-sm font-bold"
                     />
-                    <Search size={16} className="absolute top-1/2 -translate-y-1/2 left-3 text-stone-400" />
+                    <Search
+                      size={16}
+                      className="absolute top-1/2 -translate-y-1/2 left-3 text-stone-400"
+                    />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1 custom-scrollbar">
-                    {filteredMenuItems.map(item => (
+                    {filteredMenuItems.map((item) => (
                       <button
                         key={item.id}
                         onClick={() => handleAddItem(item)}
                         className="flex items-center gap-3 p-2 bg-white rounded-xl border border-stone-100 hover:border-brand-blue transition-all text-start group"
                       >
                         <div className="w-8 h-8 rounded-lg overflow-hidden bg-stone-100 shrink-0">
-                          <img src={item.img} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                          <img
+                            src={item.img}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                            decoding="async"
+                          />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-[10px] font-black text-brand-blue truncate">
-                            {typeof item.name === 'string' ? item.name : (item.name[lang] || item.name['en'])}
+                            {typeof item.name === "string"
+                              ? item.name
+                              : item.name[lang] || item.name["en"]}
                           </p>
-                          <p className="text-[8px] text-stone-400 font-bold uppercase">{item.category}</p>
+                          <p className="text-[8px] text-stone-400 font-bold uppercase">
+                            {item.category}
+                          </p>
                         </div>
-                        <Plus size={14} className="text-stone-300 group-hover:text-brand-blue" />
+                        <Plus
+                          size={14}
+                          className="text-stone-300 group-hover:text-brand-blue"
+                        />
                       </button>
                     ))}
                   </div>
@@ -790,20 +956,27 @@ function AdminView({
               ) : (
                 <div className="space-y-3">
                   {localCart.map((item, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-4 bg-white rounded-2xl border border-stone-100 hover:border-brand-orange/30 transition-all shadow-sm">
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between p-4 bg-white rounded-2xl border border-stone-100 hover:border-brand-orange/30 transition-all shadow-sm"
+                    >
                       <div className="flex items-center gap-4">
                         <div className="w-10 h-10 bg-brand-orange/10 rounded-xl flex items-center justify-center font-black text-brand-orange text-sm">
                           {item.qty}x
                         </div>
                         <div>
                           <p className="font-bold text-brand-blue text-sm">
-                            {typeof item.name === 'string' ? item.name : (item.name[lang] || item.name['en'])}
+                            {typeof item.name === "string"
+                              ? item.name
+                              : item.name[lang] || item.name["en"]}
                           </p>
-                          <p className="text-[10px] text-stone-400 font-bold uppercase tracking-widest">{item.category}</p>
+                          <p className="text-[10px] text-stone-400 font-bold uppercase tracking-widest">
+                            {item.category}
+                          </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <button 
+                        <button
                           onClick={() => {
                             const newCart = [...localCart];
                             if (newCart[idx].qty > 1) {
@@ -826,42 +999,54 @@ function AdminView({
               {/* Show Deleted Items for reference (To be replaced) */}
               {deletedItems.length > 0 && (
                 <div className="space-y-3 opacity-50 grayscale mt-6">
-                   <p className="text-[10px] font-black uppercase text-stone-400 px-1">
-                     {t.deletedItemsForReplacement}
-                   </p>
-                   {deletedItems.map((item, idx) => (
-                     <div key={idx} className="flex items-center justify-between p-3 bg-stone-50 rounded-xl border border-stone-100 line-through">
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs font-bold text-stone-400">{item.qty}x</span>
-                          <p className="text-xs font-bold text-stone-400">
-                             {typeof item.name === 'string' ? item.name : (item.name[lang] || item.name['en'])}
-                          </p>
-                        </div>
-                        <button 
-                          onClick={() => {
-                            setLocalCart([...localCart, item]);
-                            setDeletedItems(deletedItems.filter((_, i) => i !== idx));
-                          }}
-                          className="text-[10px] font-bold text-brand-blue hover:underline"
-                        >
-                          {t.undo}
-                        </button>
-                     </div>
-                   ))}
+                  <p className="text-[10px] font-black uppercase text-stone-400 px-1">
+                    {t.deletedItemsForReplacement}
+                  </p>
+                  {deletedItems.map((item, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between p-3 bg-stone-50 rounded-xl border border-stone-100 line-through"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-bold text-stone-400">
+                          {item.qty}x
+                        </span>
+                        <p className="text-xs font-bold text-stone-400">
+                          {typeof item.name === "string"
+                            ? item.name
+                            : item.name[lang] || item.name["en"]}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setLocalCart([...localCart, item]);
+                          setDeletedItems(
+                            deletedItems.filter((_, i) => i !== idx),
+                          );
+                        }}
+                        className="text-[10px] font-bold text-brand-blue hover:underline"
+                      >
+                        {t.undo}
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
           </div>
 
           <div className="p-8 bg-white border-t border-stone-100 flex gap-4 shrink-0">
-            <button onClick={onClose} className="flex-1 px-8 py-4 rounded-2xl font-black text-stone-400 hover:bg-stone-50 transition-all">
+            <button
+              onClick={onClose}
+              className="flex-1 px-8 py-4 rounded-2xl font-black text-stone-400 hover:bg-stone-50 transition-all"
+            >
               {t.cancel}
             </button>
-            <button 
+            <button
               onClick={handleSave}
               className="flex-1 bg-brand-orange text-white px-8 py-4 rounded-2xl font-black hover:bg-brand-orangeHover transition-all shadow-lg"
             >
-              {t.saveSettings || 'Save'}
+              {t.saveSettings || "Save"}
             </button>
           </div>
         </div>
@@ -871,7 +1056,12 @@ function AdminView({
 
   return (
     <div className="max-w-7xl mx-auto py-16 px-4 animate-fade-in">
-      {editingBooking && <OrderEditorModal booking={editingBooking} onClose={() => setEditingBooking(null)} />}
+      {editingBooking && (
+        <OrderEditorModal
+          booking={editingBooking}
+          onClose={() => setEditingBooking(null)}
+        />
+      )}
       <div className="space-y-8">
         {/* Professional Welcome Header */}
         <div className="bg-white p-8 md:p-12 rounded-[2.5rem] shadow-xl border border-stone-100 relative overflow-hidden mb-12">
@@ -889,7 +1079,13 @@ function AdminView({
               </h2>
               <p className="text-stone-400 mt-2 font-bold flex items-center gap-2 justify-center md:justify-start">
                 <Users size={16} />
-                {isSuperAdmin ? (lang === "ar" ? "أدمن" : "Admin") : (adminRole === "main" ? t.mainAdminRole : t.staffRole)}
+                {isSuperAdmin
+                  ? lang === "ar"
+                    ? "أدمن"
+                    : "Admin"
+                  : adminRole === "main"
+                    ? t.mainAdminRole
+                    : t.staffRole}
               </p>
             </div>
             <button
@@ -926,14 +1122,24 @@ function AdminView({
               <button
                 onClick={() => {
                   const d = new Date(Date.now() - 86400000);
-                  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+                  const local = new Date(
+                    d.getTime() - d.getTimezoneOffset() * 60000,
+                  );
                   setAdminDateFilter(local.toISOString().split("T")[0]);
                 }}
-                className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${(() => {
-                  const d = new Date(Date.now() - 86400000);
-                  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-                  return adminDateFilter === local.toISOString().split("T")[0];
-                })() ? "bg-brand-blue text-white shadow-md" : "bg-stone-50 text-stone-500"}`}
+                className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
+                  (() => {
+                    const d = new Date(Date.now() - 86400000);
+                    const local = new Date(
+                      d.getTime() - d.getTimezoneOffset() * 60000,
+                    );
+                    return (
+                      adminDateFilter === local.toISOString().split("T")[0]
+                    );
+                  })()
+                    ? "bg-brand-blue text-white shadow-md"
+                    : "bg-stone-50 text-stone-500"
+                }`}
               >
                 {t.yesterday}
               </button>
@@ -969,14 +1175,14 @@ function AdminView({
               </button>
               <div className="flex gap-2">
                 <button
-                  onClick={() => printDailyReport('italian')}
+                  onClick={() => printDailyReport("italian")}
                   className="flex-1 bg-stone-800 text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-stone-700 transition-all shadow-sm"
                 >
                   <Utensils size={14} />
                   {t.italian}
                 </button>
                 <button
-                  onClick={() => printDailyReport('oriental')}
+                  onClick={() => printDailyReport("oriental")}
                   className="flex-1 bg-brand-blue text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-brand-blueHover transition-all shadow-sm"
                 >
                   <Utensils size={14} />
@@ -1021,7 +1227,9 @@ function AdminView({
                 <tr>
                   <th className="p-6 font-bold whitespace-nowrap">
                     <span className="no-print">{t.bookingName}</span>
-                    <span className="hidden print:inline">Guest Name / Room</span>
+                    <span className="hidden print:inline">
+                      Guest Name / Room
+                    </span>
                   </th>
                   <th className="p-6 font-bold whitespace-nowrap">
                     <span className="no-print">{t.bookingDateTime}</span>
@@ -1060,10 +1268,7 @@ function AdminView({
                       <p className="font-black text-brand-blue text-lg">
                         {b.name}
                       </p>
-                      <p
-                        className="text-sm text-stone-500 font-bold"
-                        dir="ltr"
-                      >
+                      <p className="text-sm text-stone-500 font-bold" dir="ltr">
                         {b.phone}
                       </p>
                       <span className="bg-brand-orange/10 text-brand-orange px-2 py-0.5 rounded text-xs font-bold whitespace-nowrap">
@@ -1080,9 +1285,7 @@ function AdminView({
                         {b.restaurant}
                       </span>
                       {b.date} <br />{" "}
-                      <span className="text-brand-orange">
-                        {b.time}
-                      </span>
+                      <span className="text-brand-orange">{b.time}</span>
                     </td>
                     <td className="p-6 font-black text-xl text-stone-700 text-center">
                       {b.guests}
@@ -1276,10 +1479,7 @@ function AdminView({
             </p>
             <p className="text-5xl font-black text-red-600 my-auto">
               {bookings
-                .filter(
-                  (b) =>
-                    b.date === todayStr && b.status !== "cancelled",
-                )
+                .filter((b) => b.date === todayStr && b.status !== "cancelled")
                 .reduce((sum, b) => sum + Number(b.guests || 0), 0)}
             </p>
           </div>
@@ -1296,19 +1496,21 @@ function AdminView({
               lang={lang}
             />
             <BestSellersChart bookings={bookings} t={t} lang={lang} />
-            
+
             {/* User Management for Super Admin ONLY */}
             {isSuperAdmin && (
-              <UsersPanel
-                users={users}
-                t={t}
-                db={db}
-                showToast={showToast}
-              />
+              <UsersPanel users={users} t={t} db={db} showToast={showToast} />
             )}
 
-            {isSuperAdmin && <CustomerDatabasePanel bookings={bookings} t={t} />}
-            <BlacklistPanel blacklist={blacklist} t={t} db={db} showToast={showToast} />
+            {isSuperAdmin && (
+              <CustomerDatabasePanel bookings={bookings} t={t} />
+            )}
+            <BlacklistPanel
+              blacklist={blacklist}
+              t={t}
+              db={db}
+              showToast={showToast}
+            />
           </div>
         )}
 
@@ -1336,9 +1538,7 @@ function AdminView({
                   </div>
                 </div>
                 <p className="text-[10px] text-stone-400 font-bold mt-4 uppercase rotate-[-45deg] md:rotate-0">
-                  {i === 6
-                    ? t.today
-                    : d.date.split("-").slice(1).join("/")}
+                  {i === 6 ? t.today : d.date.split("-").slice(1).join("/")}
                 </p>
               </div>
             ))}
