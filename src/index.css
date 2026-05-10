@@ -41,15 +41,33 @@
     background-color: #171717 !important;
   }
 
+  html.dark .bg-stone-100 {
+    background-color: #292524 !important;
+  }
+
+  html.dark .bg-stone-200 {
+    background-color: #3e3c3b !important;
+  }
+
+  html.dark .text-stone-900,
+  html.dark .text-brand-blue {
+    color: #fafaf9 !important;
+  }
+
   html.dark .text-stone-800, 
   html.dark .text-stone-700, 
   html.dark .text-stone-600 {
     color: #e7e5e4 !important;
   }
 
+  html.dark .text-stone-500,
+  html.dark .text-stone-400 {
+    color: #a8a29e !important;
+  }
+
   html.dark .border-stone-100, 
   html.dark .border-stone-200 {
-    border-color: #262626 !important;
+    border-color: #2b2927 !important;
   }
 
   html.dark input, 
@@ -57,7 +75,7 @@
   html.dark textarea {
     background-color: #171717 !important;
     color: white !important;
-    border-color: #262626 !important;
+    border-color: #2b2927 !important;
   }
 }
 
@@ -118,6 +136,10 @@
 
   .animate-fade-scale {
     animation: fadeInScale 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  .animate-spin-slow {
+    animation: spin 8s linear infinite;
   }
 }
 

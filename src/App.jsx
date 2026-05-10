@@ -173,7 +173,9 @@ export default function App() {
     };
   });
   const [activeRestaurantMenu, setActiveRestaurantMenu] = useState("oriental");
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(
+    () => localStorage.getItem("darkMode") === "true",
+  );
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showPwaBanner, setShowPwaBanner] = useState(false);
 
@@ -518,8 +520,10 @@ export default function App() {
   useEffect(() => {
     if (isDarkMode) {
       document.documentElement.classList.add("dark");
+      localStorage.setItem("darkMode", "true");
     } else {
       document.documentElement.classList.remove("dark");
+      localStorage.setItem("darkMode", "false");
     }
   }, [isDarkMode]);
 
@@ -817,10 +821,20 @@ export default function App() {
       const requestedGuests = Number(bookingData.guests || 1);
 
       // Blacklist check
-      const isBlacklisted = blacklist.some(
-        (item) =>
-          item.value === bookingData.phone || item.value === bookingData.room,
-      );
+      const isBlacklisted = blacklist.some((item) => {
+        if (item.status === "unbanned") return false;
+        const isMatch =
+          item.value === bookingData.phone || item.value === bookingData.room;
+        if (!isMatch) return false;
+
+        // If there is an expiry date, the ban is active up to and including that date
+        if (item.expiryDate) {
+          return bookingData.date <= item.expiryDate;
+        }
+
+        // No expiry means permanent ban
+        return true;
+      });
       if (isBlacklisted) {
         showToast(t.blacklistedMsg, 6000);
         return;
