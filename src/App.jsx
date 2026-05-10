@@ -1,45 +1,42 @@
-import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  Suspense,
+  lazy,
+  useRef,
+} from "react";
 import {
   collection,
   doc,
   onSnapshot,
   setDoc,
-  updateDoc,
-  deleteDoc,
-  addDoc,
-  serverTimestamp,
   query,
   where,
-  getDocs,
 } from "firebase/firestore";
 import {
-  Menu as MenuIcon,
-  X,
-  ChevronDown,
-  Globe,
-  Plus,
   Check,
   MessageCircle,
-  Moon,
-  Sun,
   Clock,
-  Utensils,
+  Smartphone,
+  X,
 } from "lucide-react";
-import PhoneInput from "react-phone-number-input";
-import "react-phone-number-input/style.css";
 
 // Firebase Instance
-import { db } from "./firebase";
+import { db /*, auth */ } from "./firebase";
+// import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth"; // Deferred for now
 
 // Externalized Data and Translations
 import { translations } from "./translations";
-import { CATEGORIES, MENU_ITEMS } from "./data";
+import { MENU_ITEMS } from "./data";
 
 // Core Components (Always loaded)
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import Hero from "./components/Hero";
 import CartSidebar from "./components/CartSidebar";
+// import OtpModal from "./components/OtpModal"; // Deferred for now
 
 // Lazy Loaded Views (Loaded on demand to improve performance)
 const BookingView = lazy(() => import("./components/BookingView"));
@@ -47,6 +44,7 @@ const AdminView = lazy(() => import("./components/AdminView"));
 const MenuView = lazy(() => import("./components/MenuView"));
 const TrackView = lazy(() => import("./components/TrackView"));
 const SuccessView = lazy(() => import("./components/SuccessView"));
+const FeedbackView = lazy(() => import("./components/FeedbackView"));
 
 import { SkeletonPage, SkeletonMenu } from "./components/SkeletonLoader";
 
@@ -63,6 +61,51 @@ const getLocalDate = () => {
   const offset = d.getTimezoneOffset();
   const local = new Date(d.getTime() - offset * 60 * 1000);
   return local.toISOString().split("T")[0];
+};
+
+const pwaTranslations = {
+  ar: {
+    title: "تثبيت تطبيق Moreno Horizon",
+    desc: "قم بتثبيت التطبيق على شاشتك الرئيسية للوصول السريع ومتابعة حجوزاتك بشكل أسرع وأسهل!",
+    btnInstall: "تثبيت الآن",
+    btnDismiss: "ليس الآن"
+  },
+  en: {
+    title: "Install Moreno Horizon",
+    desc: "Install our luxury booking app on your home screen for instant access & real-time updates!",
+    btnInstall: "Install Now",
+    btnDismiss: "Not Now"
+  },
+  it: {
+    title: "Installa l'app Moreno Horizon",
+    desc: "Installa la nostra app sulla schermata iniziale per prenotazioni immediate e aggiornamenti!",
+    btnInstall: "Installa Ora",
+    btnDismiss: "Non Ora"
+  },
+  de: {
+    title: "Moreno Horizon App installieren",
+    desc: "Installieren Sie unsere App für schnellen Zugriff und ein nahtloses Reservierungserlebnis!",
+    btnInstall: "Jetzt installieren",
+    btnDismiss: "Nicht jetzt"
+  },
+  ru: {
+    title: "Установить приложение Moreno Horizon",
+    desc: "Установите приложение на главный экран для быстрого доступа и удобного бронирования столов!",
+    btnInstall: "Установить",
+    btnDismiss: "Не сейчас"
+  },
+  fr: {
+    title: "Installer l'app Moreno Horizon",
+    desc: "Installez l'application sur votre écran d'accueil pour un accès rapide et des réservations fluides !",
+    btnInstall: "Installer",
+    btnDismiss: "Pas maintenant"
+  },
+  pl: {
+    title: "Zainstaluj aplikację Moreno Horizon",
+    desc: "Zainstaluj aplikację na ekranie głównym, aby uzyskać szybki dostęp i bezproblemową rezerwację!",
+    btnInstall: "Zainstaluj",
+    btnDismiss: "Nie teraz"
+  }
 };
 
 export default function App() {
@@ -130,14 +173,65 @@ export default function App() {
     };
   });
   const [activeRestaurantMenu, setActiveRestaurantMenu] = useState("oriental");
-  const [searchQuery, setSearchQuery] = useState("");
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [showPwaBanner, setShowPwaBanner] = useState(false);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      const isDismissed = sessionStorage.getItem("morenoPwaDismissed");
+      if (!isDismissed) {
+        setShowPwaBanner(true);
+      }
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handlePwaInstall = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log(`PWA install outcome: ${outcome}`);
+    setDeferredPrompt(null);
+    setShowPwaBanner(false);
+  };
+
+  const handlePwaDismiss = () => {
+    sessionStorage.setItem("morenoPwaDismissed", "true");
+    setShowPwaBanner(false);
+  };
+
+  /* Deferred for now:
+  const [otpState, setOtpState] = useState({
+    show: false,
+    phone: "",
+    correctCode: "", // Used in sandbox mode
+    loading: false,
+    error: "",
+    confirmationResult: null,
+  });
+  const recaptchaVerifierRef = useRef(null);
+  */
 
   // --- Back Button & History Support ---
   useEffect(() => {
     // Initial state setup
     if (!window.history.state) {
       window.history.replaceState({ view: "home" }, "");
+    }
+
+    // Support landing directly via URL query parameters (e.g. ?view=feedback)
+    const params = new URLSearchParams(window.location.search);
+    const urlView = params.get("view");
+    if (urlView === "feedback") {
+      setView("feedback");
     }
 
     const handlePopState = (event) => {
@@ -221,18 +315,46 @@ export default function App() {
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.3);
       }
-    } catch (e) {}
+    } catch (e) {
+      // Ignore audio playback errors
+    }
   }, []);
 
   // Admin Auth check for notifications is now read from localStorage directly when needed.
-
-
-
 
   const showToast = useCallback((msg, duration = 3000) => {
     setToast(msg);
     setTimeout(() => setToast(null), duration);
   }, []);
+
+  const triggerBrowserNotification = useCallback((booking) => {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+
+    const title = lang === "ar" ? "🔔 حجز جديد وارد!" : "🔔 New Booking Received!";
+    const body = lang === "ar"
+      ? `النزيل: ${booking.name}\nالمطعم: ${booking.restaurant === "italian" ? "الإيطالي" : "الشرقي"}\nالغرفة: ${booking.room} | الأفراد: ${booking.guests}`
+      : `Guest: ${booking.name}\nRestaurant: ${booking.restaurant === "italian" ? "Italian" : "Oriental"}\nRoom: ${booking.room} | Guests: ${booking.guests}`;
+
+    const options = {
+      body,
+      icon: "/logo.webp",
+      badge: "/logo.webp",
+      vibrate: [200, 100, 200],
+      tag: "new-booking",
+      renotify: true,
+      data: {
+        url: window.location.origin + "?view=admin",
+      },
+    };
+
+    if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.ready.then((registration) => {
+        registration.showNotification(title, options);
+      });
+    } else {
+      new Notification(title, options);
+    }
+  }, [lang]);
 
   const [users, setUsers] = useState([]);
   const [blacklist, setBlacklist] = useState([]);
@@ -263,9 +385,9 @@ export default function App() {
     shift1: "18:30 - 19:30",
     shift2: "20:00 - 21:00",
     shiftOri: "19:00 - 20:00",
-    capacityItalian: 40,
-    capacityOriental: 25,
-    shiftLimitItalian: 20,
+    capacityItalian: 80,
+    capacityOriental: 30,
+    shiftLimitItalian: 40,
     isClosedItalian: false,
     isClosedOriental: false,
   });
@@ -302,11 +424,14 @@ export default function App() {
         console.error("Error fetching settings:", error);
         settingsLoaded = true;
         checkLoading();
-      }
+      },
     );
 
     // Sync Bookings & Alert Logic
-    const bookingsQuery = query(collection(db, "bookings"), where("date", ">=", todayStr));
+    const bookingsQuery = query(
+      collection(db, "bookings"),
+      where("date", ">=", todayStr),
+    );
     const unsubscribeBookings = onSnapshot(
       bookingsQuery,
       (snapshot) => {
@@ -326,8 +451,12 @@ export default function App() {
         ) {
           playSound("success");
           const currentLang = localStorage.getItem("prefLang") || "ar";
-          const alertMsg = translations[currentLang]?.newBookingAlert || translations["en"]?.newBookingAlert || "حجز جديد وارد!";
+          const alertMsg =
+            translations[currentLang]?.newBookingAlert ||
+            translations["en"]?.newBookingAlert ||
+            "حجز جديد وارد!";
           showToast(alertMsg);
+          triggerBrowserNotification(data[0]);
         }
         if (data.length > 0) {
           lastBookingIdRef.current = data[0].id;
@@ -341,7 +470,7 @@ export default function App() {
         console.error("Error fetching bookings:", error);
         bookingsLoaded = true;
         checkLoading();
-      }
+      },
     );
 
     // Sync Users
@@ -435,9 +564,9 @@ export default function App() {
       if (name === "restaurant") {
         setBookingData({ ...bookingData, restaurant: value, time: "" });
         setActiveRestaurantMenu(value);
-        
+
         if (value === "oriental") {
-          const allItems = MENU_ITEMS.find(i => i.id === 1);
+          const allItems = MENU_ITEMS.find((i) => i.id === 1);
           if (allItems) {
             setCart([{ ...allItems, qty: Number(bookingData.guests || 1) }]);
           }
@@ -447,15 +576,17 @@ export default function App() {
       } else if (name === "guests") {
         const guestsVal = Number(value);
         setBookingData({ ...bookingData, guests: value });
-        
+
         // Sync Oriental 'All Items' qty with pax count
         if (bookingData.restaurant === "oriental") {
-          setCart(prev => {
-            const hasAllItems = prev.some(i => i.id === 1);
+          setCart((prev) => {
+            const hasAllItems = prev.some((i) => i.id === 1);
             if (hasAllItems) {
-              return prev.map(i => i.id === 1 ? { ...i, qty: guestsVal } : i);
+              return prev.map((i) =>
+                i.id === 1 ? { ...i, qty: guestsVal } : i,
+              );
             } else {
-              const allItems = MENU_ITEMS.find(i => i.id === 1);
+              const allItems = MENU_ITEMS.find((i) => i.id === 1);
               return allItems ? [{ ...allItems, qty: guestsVal }] : prev;
             }
           });
@@ -467,7 +598,169 @@ export default function App() {
     [bookingData, t],
   );
 
+  /* Deferred for now:
+  const triggerSmsVerification = useCallback(
+    async (statusToSave) => {
+      setOtpState((prev) => ({
+        ...prev,
+        show: true,
+        loading: true,
+        error: "",
+        statusToSave,
+      }));
 
+      const phone = bookingData.phone;
+
+      if (settings.sandboxSMS) {
+        // Sandbox / Demonstration Mode
+        setTimeout(() => {
+          const mockCode = Math.floor(100000 + Math.random() * 900000).toString();
+          setOtpState((prev) => ({
+            ...prev,
+            loading: false,
+            correctCode: mockCode,
+          }));
+          showToast(
+            lang === "ar"
+              ? `📱 رمز التحقق (الوضع التجريبي): ${mockCode}`
+              : `📱 Verification Code (Sandbox): ${mockCode}`,
+            15000,
+          );
+        }, 1200);
+      } else {
+        // Live Firebase Auth SMS Code
+        try {
+          if (!recaptchaVerifierRef.current) {
+            recaptchaVerifierRef.current = new RecaptchaVerifier(
+              auth,
+              "recaptcha-container",
+              {
+                size: "invisible",
+                callback: () => {
+                  console.log("reCAPTCHA solved");
+                },
+                "expired-callback": () => {
+                  console.log("reCAPTCHA expired");
+                },
+              },
+            );
+          }
+
+          const confirmationResult = await signInWithPhoneNumber(
+            auth,
+            phone,
+            recaptchaVerifierRef.current,
+          );
+
+          setOtpState((prev) => ({
+            ...prev,
+            loading: false,
+            confirmationResult,
+          }));
+          showToast(t.otpSent || "Verification code sent!", 4000);
+        } catch (err) {
+          console.error("Firebase Auth Error:", err);
+          let userMsg = t.error || "Something went wrong";
+          if (err.code === "auth/invalid-phone-number") {
+            userMsg = t.phoneError || "Invalid phone number format";
+          } else if (err.code === "auth/too-many-requests") {
+            userMsg =
+              lang === "ar"
+                ? "محاولات كثيرة جداً. يرجى المحاولة لاحقاً."
+                : "Too many requests. Please try again later.";
+          }
+          setOtpState((prev) => ({
+            ...prev,
+            show: false,
+            loading: false,
+            error: userMsg,
+          }));
+          showToast(userMsg, 5000);
+        }
+      }
+    },
+    [bookingData.phone, settings.sandboxSMS, lang, showToast, t],
+  );
+
+  const resendOtp = useCallback(async () => {
+    setOtpState((prev) => ({ ...prev, loading: true, error: "" }));
+    const phone = bookingData.phone;
+
+    if (settings.sandboxSMS) {
+      setTimeout(() => {
+        const mockCode = Math.floor(100000 + Math.random() * 900000).toString();
+        setOtpState((prev) => ({
+          ...prev,
+          loading: false,
+          correctCode: mockCode,
+        }));
+        showToast(
+          lang === "ar"
+            ? `📱 رمز التحقق الجديد (الوضع التجريبي): ${mockCode}`
+            : `📱 New Verification Code (Sandbox): ${mockCode}`,
+          15000,
+        );
+      }, 1000);
+    } else {
+      try {
+        const confirmationResult = await signInWithPhoneNumber(
+          auth,
+          phone,
+          recaptchaVerifierRef.current,
+        );
+        setOtpState((prev) => ({
+          ...prev,
+          loading: false,
+          confirmationResult,
+          }));
+        showToast(t.otpSent || "Verification code sent!", 4000);
+      } catch (err) {
+        console.error("Firebase Auth Resend Error:", err);
+        setOtpState((prev) => ({
+          ...prev,
+          loading: false,
+          error: t.error || "Error",
+        }));
+      }
+    }
+  }, [bookingData.phone, settings.sandboxSMS, lang, showToast, t]);
+
+  const verifyOtpCode = useCallback(
+    async (enteredCode) => {
+      setOtpState((prev) => ({ ...prev, loading: true, error: "" }));
+
+      if (settings.sandboxSMS) {
+        if (enteredCode === otpState.correctCode) {
+          setOtpState((prev) => ({ ...prev, loading: false, show: false }));
+          await submitBooking(otpState.statusToSave, true);
+        } else {
+          setOtpState((prev) => ({
+            ...prev,
+            loading: false,
+            error: t.invalidOtp || "Invalid code",
+          }));
+        }
+      } else {
+        try {
+          if (!otpState.confirmationResult) {
+            throw new Error("No confirmation result");
+          }
+          await otpState.confirmationResult.confirm(enteredCode);
+          setOtpState((prev) => ({ ...prev, loading: false, show: false }));
+          await submitBooking(otpState.statusToSave, true);
+        } catch (err) {
+          console.error("Verification Error:", err);
+          setOtpState((prev) => ({
+            ...prev,
+            loading: false,
+            error: t.invalidOtp || "Invalid code",
+          }));
+        }
+      }
+    },
+    [settings.sandboxSMS, otpState, t.invalidOtp],
+  );
+  */
 
   const submitBooking = useCallback(
     async (eOrStatus) => {
@@ -475,7 +768,10 @@ export default function App() {
       const overrideStatus = typeof eOrStatus === "string" ? eOrStatus : null;
 
       if (cart.length === 0) {
-        showToast(t.selectItemsFirst || "يرجى اختيار أصناف من المنيو أولاً قبل الحجز", 4000);
+        showToast(
+          t.selectItemsFirst || "يرجى اختيار أصناف من المنيو أولاً قبل الحجز",
+          4000,
+        );
         return;
       }
 
@@ -569,7 +865,7 @@ export default function App() {
         if (b.status !== "cancelled" && b.resId === bookingData.restaurant) {
           const samePhone = b.phone === bookingData.phone;
           const sameRoom = b.room === bookingData.room;
-          
+
           if (samePhone || sameRoom) {
             const existingDate = new Date(b.date);
             const diffTime = Math.abs(requestedDate - existingDate);
@@ -585,6 +881,14 @@ export default function App() {
         return;
       }
 
+      // SMS OTP Verification Interception (Deferred)
+      /*
+      if (settings.enableSMSVerification && !isOtpVerified) {
+        triggerSmsVerification(overrideStatus);
+        return;
+      }
+      */
+
       let orderDetails = t.noFoodOrders;
       let engOrderDetails = "No Food Orders";
       if (cart.length > 0) {
@@ -592,7 +896,10 @@ export default function App() {
           .map((item) => `- ${item.qty}x ${item.name[lang] || item.name["en"]}`)
           .join("\n");
         engOrderDetails = cart
-          .map((item) => `- ${item.qty}x ${item.name["en"] || item.name["ar"] || item.name}`)
+          .map(
+            (item) =>
+              `- ${item.qty}x ${item.name["en"] || item.name["ar"] || item.name}`,
+          )
           .join("\n");
       }
 
@@ -644,7 +951,7 @@ export default function App() {
       showToast(t.savingReservation);
 
       try {
-        const response = await fetch(GOOGLE_SCRIPT_URL, {
+        await fetch(GOOGLE_SCRIPT_URL, {
           method: "POST",
           mode: "no-cors",
           headers: {
@@ -652,10 +959,10 @@ export default function App() {
           },
           body: JSON.stringify({
             command: "newBooking",
-            booking: newBooking
+            booking: newBooking,
           }),
         });
-        
+
         console.log("Master Sheet Sync Triggered");
       } catch (error) {
         console.error("Sheet Sync error:", error);
@@ -665,8 +972,6 @@ export default function App() {
     },
     [bookingData, blacklist, t, bookings, lang, cart, settings, playSound],
   );
-
-
 
   const addToCart = useCallback(
     (item) => {
@@ -729,29 +1034,6 @@ export default function App() {
     ],
   );
 
-  const updateCartQty = useCallback(
-    (id, delta) => {
-      setCart((prev) => {
-        const currentTotal = prev.reduce((sum, i) => sum + i.qty, 0);
-
-        return prev.map((item) => {
-          if (item.id === id) {
-            if (delta > 0) {
-              const paxCount = parseInt(bookingData.guests) || 0;
-              if (currentTotal >= paxCount) {
-                showToast(t.paxLimitReached);
-                return item;
-              }
-            }
-            const newQty = item.qty + delta;
-            return newQty > 0 ? { ...item, qty: newQty } : item;
-          }
-          return item;
-        });
-      });
-    },
-    [bookingData.guests, t.paxLimitReached, showToast],
-  );
 
   const removeFromCart = useCallback((id) => {
     setCart((prev) => prev.filter((i) => i.id !== id));
@@ -784,25 +1066,7 @@ export default function App() {
     return Math.max(0, (settings.capacityOriental || 25) - daily);
   }, [bookings, todayStr, settings.capacityOriental]);
 
-  // Weekly Trend Data
-  const weeklyData = useMemo(() => {
-    const last7Days = [...Array(7)].map((_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (6 - i));
-      const offset = d.getTimezoneOffset();
-      const local = new Date(d.getTime() - offset * 60 * 1000);
-      return local.toISOString().split("T")[0];
-    });
-    return last7Days.map((date) => ({
-      date,
-      count: bookings.filter((b) => b.date === date).length,
-    }));
-  }, [bookings]);
 
-  const maxWeeklyCount = useMemo(
-    () => Math.max(...weeklyData.map((d) => d.count), 1),
-    [weeklyData],
-  );
 
   // Calculate Available Tables (Booking Logic)
   const targetDateForTables =
@@ -1035,6 +1299,16 @@ export default function App() {
 
           {view === "success" && <SuccessView t={t} setView={setView} />}
 
+          {view === "feedback" && (
+            <FeedbackView
+              lang={lang}
+              db={db}
+              showToast={showToast}
+              setView={setView}
+              t={t}
+            />
+          )}
+
           {view === "admin" && (
             <AdminView
               t={t}
@@ -1042,8 +1316,6 @@ export default function App() {
               orientalTodayAvail={orientalTodayAvail}
               bookings={bookings}
               todayStr={todayStr}
-              weeklyData={weeklyData}
-              maxWeeklyCount={maxWeeklyCount}
               settings={settings}
               lang={lang}
               users={users}
@@ -1058,6 +1330,64 @@ export default function App() {
 
       {/* Footer */}
       <Footer t={t} setView={setView} />
+
+      {/* reCAPTCHA Invisible Anchor for Firebase SMS Verification (Deferred)
+      <div id="recaptcha-container" className="hidden"></div>
+      */}
+
+      {/* Gorgeous OTP Modal (Deferred)
+      {otpState.show && (
+        <OtpModal
+          otpState={otpState}
+          onClose={() => setOtpState((prev) => ({ ...prev, show: false }))}
+          onVerify={verifyOtpCode}
+          onResend={resendOtp}
+          t={t}
+          lang={lang}
+        />
+      )}
+      */}
+      {/* Premium PWA Installation Floating Banner */}
+      {showPwaBanner && (
+        <div className="fixed bottom-6 left-6 right-6 md:left-8 md:right-auto md:max-w-md z-[120] bg-stone-950/95 dark:bg-stone-900/95 backdrop-blur-xl p-5 md:p-6 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-stone-800 text-white flex flex-col md:flex-row items-start md:items-center gap-4 animate-slide-up no-print">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-400 via-brand-orange to-brand-blue rounded-t-3xl"></div>
+          
+          <button
+            onClick={handlePwaDismiss}
+            className="absolute top-3.5 right-3.5 p-1 text-stone-500 hover:text-stone-300 hover:bg-stone-800 rounded-full transition-all cursor-pointer"
+            aria-label="Close"
+          >
+            <X size={16} />
+          </button>
+
+          <div className="bg-gradient-to-br from-amber-500/20 to-brand-orange/20 border border-amber-500/30 p-3 rounded-2xl text-amber-400 shrink-0 self-center md:self-start">
+            <Smartphone size={24} />
+          </div>
+
+          <div className="flex-1 space-y-1 pr-6 md:pr-0">
+            <h4 className="text-sm font-black text-amber-400 leading-tight">
+              {pwaTranslations[lang]?.title || pwaTranslations["en"].title}
+            </h4>
+            <p className="text-[11px] text-stone-300 font-semibold leading-relaxed">
+              {pwaTranslations[lang]?.desc || pwaTranslations["en"].desc}
+            </p>
+            <div className="flex gap-3 pt-2.5">
+              <button
+                onClick={handlePwaInstall}
+                className="bg-amber-500 hover:bg-amber-600 active:scale-95 text-stone-950 px-4 py-1.5 rounded-xl font-black text-[10px] uppercase tracking-wider shadow-md hover:shadow-amber-500/20 transition-all cursor-pointer"
+              >
+                {pwaTranslations[lang]?.btnInstall || pwaTranslations["en"].btnInstall}
+              </button>
+              <button
+                onClick={handlePwaDismiss}
+                className="bg-stone-800 hover:bg-stone-700 text-stone-300 px-4 py-1.5 rounded-xl font-bold text-[10px] transition-all cursor-pointer"
+              >
+                {pwaTranslations[lang]?.btnDismiss || pwaTranslations["en"].btnDismiss}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

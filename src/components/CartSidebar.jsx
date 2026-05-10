@@ -1,4 +1,4 @@
-import React from "react";
+
 import { ShoppingBag, X, ArrowRight } from "lucide-react";
 
 const CartSidebar = ({

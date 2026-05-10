@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import { memo } from "react";
 import { CheckCircle, ArrowRight, Star } from "lucide-react";
 
 const SuccessView = memo(({ t, setView }) => {
@@ -94,5 +94,7 @@ const SuccessView = memo(({ t, setView }) => {
     </div>
   );
 });
+
+SuccessView.displayName = "SuccessView";
 
 export default SuccessView;

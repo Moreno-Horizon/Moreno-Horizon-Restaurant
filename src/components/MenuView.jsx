@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import { memo } from "react";
 import { Plus, Check, ArrowLeft } from "lucide-react";
 import { CATEGORIES, MENU_ITEMS } from "../data";
 
@@ -202,5 +202,7 @@ const MenuView = memo(({
     </div>
   );
 });
+
+MenuView.displayName = "MenuView";
 
 export default MenuView;

@@ -1,4 +1,4 @@
-import React from "react";
+
 
 export const SkeletonPage = () => (
   <div className="animate-pulse space-y-8 p-4 md:p-8 max-w-4xl mx-auto">

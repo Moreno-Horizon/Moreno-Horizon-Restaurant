@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useState } from "react";
+import { memo } from "react";
 import PhoneInput from "react-phone-number-input";
 import "react-phone-number-input/style.css";
 import {
@@ -19,11 +19,9 @@ function BookingView({
   bookingData,
   setBookingData,
   handleInputChange,
-  cart,
   getLocalDate,
   settings,
   availableTablesCount,
-  submitBooking,
 }) {
   const canGoToMenu =
     bookingData.name &&
@@ -32,9 +30,6 @@ function BookingView({
     bookingData.restaurant &&
     bookingData.guests &&
     bookingData.time;
-
-  const totalItems = cart.reduce((sum, item) => sum + item.qty, 0);
-  const paxCount = Number(bookingData.guests || 0);
 
   return (
     <div className="max-w-4xl mx-auto py-16 px-4 animate-fade-in">

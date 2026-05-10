@@ -1,8 +1,7 @@
-import React, { memo, useState, useEffect, useCallback, useMemo } from "react";
+import { memo, useState, useEffect, useCallback, useMemo } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   Search,
-  BarChart,
   Printer,
   QrCode,
   Users,
@@ -14,14 +13,19 @@ import {
   Plus,
   Edit,
   Utensils,
+  Share2,
+  Copy,
+  Bell,
+  ChefHat,
 } from "lucide-react";
 import AdminLogin from "./AdminLogin";
 import {
   SettingsPanel,
   UsersPanel,
   BlacklistPanel,
-  BestSellersChart,
   CustomerDatabasePanel,
+  AnalyticsDashboard,
+  FeedbackPanel,
 } from "./AdminPanels";
 import {
   doc,
@@ -42,8 +46,6 @@ function AdminView({
   orientalTodayAvail,
   bookings,
   todayStr,
-  weeklyData,
-  maxWeeklyCount,
   settings,
   lang,
   users,
@@ -112,12 +114,42 @@ function AdminView({
   };
 
   // --- Admin Filter States ---
-  const [adminTab, setAdminTab] = useState("all");
   const [adminSearch, setAdminSearch] = useState("");
   const [debouncedAdminSearch, setDebouncedAdminSearch] = useState("");
   const [adminStartDate, setAdminStartDate] = useState(todayStr);
   const [adminEndDate, setAdminEndDate] = useState(todayStr);
   const [editingBooking, setEditingBooking] = useState(null);
+  const [shareBooking, setShareBooking] = useState(null);
+  const [notificationPermission, setNotificationPermission] = useState(
+    () => typeof window !== "undefined" && "Notification" in window ? Notification.permission : "default"
+  );
+
+  const requestNotificationPermission = async () => {
+    if (!("Notification" in window)) {
+      showToast(lang === "ar" ? "الإشعارات غير مدعومة في هذا المتصفح" : "Notifications not supported in this browser");
+      return;
+    }
+    try {
+      const perm = await Notification.requestPermission();
+      setNotificationPermission(perm);
+      if (perm === "granted") {
+        showToast(lang === "ar" ? "🔔 تم تفعيل الإشعارات بنجاح!" : "🔔 Notifications enabled successfully!");
+        if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.ready.then((reg) => {
+            reg.showNotification(lang === "ar" ? "🔔 تم التفعيل بنجاح!" : "🔔 Activated Successfully!", {
+              body: lang === "ar" ? "ستصلك إشعارات فورية بكل الحجز الجديدة!" : "You will receive instant alerts for every new reservation!",
+              icon: "/logo.webp",
+              badge: "/logo.webp",
+            });
+          });
+        }
+      } else {
+        showToast(lang === "ar" ? "تم رفض الإذن لتفعيل الإشعارات" : "Notification permission denied");
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const dateRangeLabel = useMemo(() => {
     if (!adminStartDate && !adminEndDate) return "all";
@@ -151,9 +183,8 @@ function AdminView({
         b.name?.toLowerCase().includes(debouncedAdminSearch.toLowerCase()) ||
         b.phone?.includes(debouncedAdminSearch) ||
         (b.room && b.room.includes(debouncedAdminSearch));
-      const matchesTab = adminTab === "all" || b.status === adminTab;
 
-      if (debouncedAdminSearch) return matchesSearch && matchesTab;
+      if (debouncedAdminSearch) return matchesSearch;
 
       let matchesDate = true;
       if (adminStartDate && adminEndDate) {
@@ -164,16 +195,16 @@ function AdminView({
         matchesDate = b.date <= adminEndDate;
       }
 
-      return matchesDate && matchesTab;
+      return matchesDate;
     });
-  }, [bookings, debouncedAdminSearch, adminTab, adminStartDate, adminEndDate]);
+  }, [bookings, debouncedAdminSearch, adminStartDate, adminEndDate]);
 
   // --- Functions ---
   const updateSettingsInDB = useCallback(
     async (newSettings) => {
       try {
         const sanitizedSettings = Object.fromEntries(
-          Object.entries(newSettings).filter(([_, v]) => v !== undefined),
+          Object.entries(newSettings).filter(([, v]) => v !== undefined),
         );
 
         // Timeout wrapper for setDoc to prevent infinite hang
@@ -293,6 +324,148 @@ function AdminView({
     [t, lang],
   );
 
+  const printKitchenTicket = useCallback(
+    (booking) => {
+      let cleanOrderDetails = lang === "ar" ? "لا توجد طلبات طعام" : "No food orders";
+      if (booking.items && booking.items.length > 0) {
+        cleanOrderDetails = booking.items
+          .map((item) => `- <b>${item.qty}x</b> ${item.name[lang] || item.name["en"]}`)
+          .join("<br/>");
+      } else if (booking.orderDetails) {
+        cleanOrderDetails = booking.orderDetails.replace(/\n/g, "<br/>");
+      }
+
+      const isItalian =
+        booking.resId === "italian" ||
+        (booking.restaurant &&
+          (booking.restaurant.includes("Italian") ||
+            booking.restaurant.includes("إيطالي")));
+      const resNamePrint = isItalian ? "ITALIAN KITCHEN / المطبخ الإيطالي" : "ORIENTAL KITCHEN / المطبخ الشرقي";
+
+      const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <title>KITCHEN TICKET #MH-${booking.id.toString().slice(-4)}</title>
+                <style>
+                    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap');
+                    body {
+                        font-family: 'Cairo', sans-serif;
+                        margin: 0;
+                        padding: 10px;
+                        display: flex;
+                        justify-content: center;
+                        background: #fff;
+                        color: #000;
+                    }
+                    .ticket { 
+                        width: 100%; 
+                        max-width: 280px; 
+                        border: 1px dashed #000; 
+                        padding: 12px;
+                        box-sizing: border-box;
+                    }
+                    .header { text-align: center; margin-bottom: 8px; }
+                    .header h1 { margin: 0; font-size: 18px; font-weight: 900; text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 3px; }
+                    .header p { margin: 3px 0 0; font-size: 10px; font-weight: bold; }
+                    .divider { border-top: 1px dashed #000; margin: 8px 0; }
+                    .info-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 12px; }
+                    .info-row strong { font-weight: 900; font-size: 14px; }
+                    .kitchen-dest { 
+                        text-align: center; 
+                        font-weight: 900; 
+                        background: #000; 
+                        color: #fff; 
+                        padding: 5px; 
+                        font-size: 11px; 
+                        margin: 6px 0;
+                        border-radius: 4px;
+                    }
+                    .order-title { font-weight: bold; font-size: 11px; text-decoration: underline; margin-bottom: 4px; }
+                    .order-details { 
+                        font-size: 13px; 
+                        white-space: pre-wrap; 
+                        padding: 3px; 
+                        line-height: 1.5;
+                        font-weight: bold;
+                    }
+                    .notes-box {
+                        margin-top: 8px;
+                        padding: 5px;
+                        border: 1px dashed #000;
+                        font-size: 11px;
+                        font-weight: bold;
+                    }
+                    .footer { text-align: center; margin-top: 12px; font-size: 9px; border-top: 1px solid #000; padding-top: 4px; }
+                    @page { size: auto; margin: 0mm; }
+                </style>
+            </head>
+            <body>
+                <div class="ticket">
+                    <div class="header">
+                        <h1>شيت المطبخ</h1>
+                        <p>KITCHEN ORDER TICKET</p>
+                        <p style="font-size: 13px; font-weight: 900;">#MH-${booking.id.toString().slice(-4)}</p>
+                    </div>
+                    
+                    <div class="kitchen-dest">${resNamePrint}</div>
+                    
+                    <div class="divider"></div>
+                    
+                    <div class="info-row">
+                      <span>Room / رقم الغرفة:</span>
+                      <strong>${booking.room}</strong>
+                    </div>
+                    <div class="info-row">
+                      <span>Pax / الأفراد:</span>
+                      <strong>${booking.guests}</strong>
+                    </div>
+                    <div class="info-row">
+                      <span>Time / الوقت:</span>
+                      <strong>${booking.time}</strong>
+                    </div>
+                    <div class="info-row">
+                      <span>Date / التاريخ:</span>
+                      <strong>${booking.date}</strong>
+                    </div>
+                    
+                    <div class="divider"></div>
+                    
+                    <div class="order-title">Food Items / الطلبات:</div>
+                    <div class="order-details">${cleanOrderDetails}</div>
+                    
+                    ${booking.notes ? `
+                    <div class="notes-box">
+                      <div style="text-decoration: underline; margin-bottom: 2px;">Notes / ملاحظات:</div>
+                      <div>${booking.notes}</div>
+                    </div>
+                    ` : ''}
+                    
+                    <div class="footer">
+                        <p>Moreno Horizon - Spa & Resort</p>
+                        <p>${new Date().toLocaleString()}</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+
+      const printWindow = window.open("", "_blank");
+      if (printWindow) {
+        printWindow.document.write(html);
+        printWindow.document.close();
+        setTimeout(() => {
+          printWindow.focus();
+          printWindow.print();
+        }, 500);
+      } else {
+        showToast(t.allowPopups);
+      }
+    },
+    [t, lang, showToast],
+  );
+
   const printDailyReport = useCallback(
     (restaurantId = null) => {
       const printWindow = window.open("", "_blank");
@@ -331,10 +504,6 @@ function AdminView({
           })
         : filteredBookings;
 
-      const totalPax = bookingsToPrint.reduce(
-        (sum, b) => sum + (parseInt(b.guests) || 0),
-        0,
-      );
       const restaurantTitle = restaurantId
         ? restaurantId === "italian"
           ? " - Italian Restaurant"
@@ -490,74 +659,11 @@ function AdminView({
 
     showToast(t.savingReservation);
 
-    const isItalianBooking = (b) => {
-      const rId = (b.resId || "").toLowerCase();
-      const rName = (b.restaurant || "").toLowerCase();
-      return (
-        rId === "italian" ||
-        rName.includes("italian") ||
-        rName.includes("إيطالي") ||
-        rName.includes("ايطالي")
-      );
-    };
 
-    const isOrientalBooking = (b) => {
-      const rId = (b.resId || "").toLowerCase();
-      const rName = (b.restaurant || "").toLowerCase();
-      return (
-        rId === "oriental" ||
-        rName.includes("oriental") ||
-        rName.includes("شرقي") ||
-        rName.includes("عربي")
-      );
-    };
-
-    const italianBookings = filteredBookings.filter(isItalianBooking);
-    const orientalBookings = filteredBookings.filter(isOrientalBooking);
-    const otherBookings = filteredBookings.filter(
-      (b) => !isItalianBooking(b) && !isOrientalBooking(b),
+    const totalPax = filteredBookings.reduce(
+      (sum, b) => sum + (parseInt(b.guests) || 0),
+      0,
     );
-
-    const calculatePax = (items) =>
-      items.reduce((sum, b) => sum + (parseInt(b.guests) || 0), 0);
-    const totalPax = calculatePax(filteredBookings);
-
-    const renderEmailTable = (items, title) => {
-      const pax = calculatePax(items);
-      return `
-        <h3 style="color: #f97316; margin-top: 30px; border-bottom: 1px solid #eee;">${title} (Pax: ${pax})</h3>
-        <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
-          <thead>
-            <tr style="background: #f9fafb;">
-              <th style="padding: 10px; border: 1px solid #eee; text-align: left;">Guest</th>
-              <th style="padding: 10px; border: 1px solid #eee; text-align: left;">Room</th>
-              <th style="padding: 10px; border: 1px solid #eee; text-align: center;">Pax</th>
-              <th style="padding: 10px; border: 1px solid #eee; text-align: left;">Time</th>
-              <th style="padding: 10px; border: 1px solid #eee; text-align: left;">Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${
-              items.length === 0
-                ? `<tr><td colspan="5" style="text-align: center; padding: 15px; color: #888; border: 1px solid #eee; font-style: italic;">No bookings</td></tr>`
-                : items
-                    .map(
-                      (b) => `
-              <tr>
-                <td style="padding: 10px; border: 1px solid #eee;">${b.name}</td>
-                <td style="padding: 10px; border: 1px solid #eee;">${b.room}</td>
-                <td style="padding: 10px; border: 1px solid #eee; text-align: center;">${b.guests}</td>
-                <td style="padding: 10px; border: 1px solid #eee;">${b.time}</td>
-                <td style="padding: 10px; border: 1px solid #eee; font-size: 12px;">${b.notes || "-"}</td>
-              </tr>
-            `,
-                    )
-                    .join("")
-            }
-          </tbody>
-        </table>
-      `;
-    };
 
     try {
       const GOOGLE_SCRIPT_URL = import.meta.env.VITE_GOOGLE_SCRIPT_URL;
@@ -1122,21 +1228,38 @@ function AdminView({
                     : t.staffRole}
               </p>
             </div>
-            <button
-              onClick={() => {
-                setIsAdminAuth(false);
-                setAdminPass("");
-                setAdminRole(null);
-                setCurrentUser(null);
-                localStorage.removeItem("morenoAdminAuth");
-                localStorage.removeItem("morenoAdminRole");
-                localStorage.removeItem("morenoCurrentUser");
-              }}
-              className="px-8 py-3 bg-red-50 text-red-500 rounded-2xl font-black text-sm hover:bg-red-500 hover:text-white transition-all shadow-sm border border-red-100 flex items-center gap-2"
-            >
-              <XCircle size={18} />
-              {t.logout}
-            </button>
+            <div className="flex flex-wrap gap-3 w-full md:w-auto justify-center md:justify-end">
+              {notificationPermission !== "granted" && (
+                <button
+                  onClick={requestNotificationPermission}
+                  className="px-6 py-3 bg-brand-orange/10 text-brand-orange hover:bg-brand-orange hover:text-white rounded-2xl font-black text-sm transition-all shadow-sm border border-brand-orange/20 flex items-center gap-2 cursor-pointer"
+                >
+                  <Bell size={18} className="animate-bounce" />
+                  {lang === "ar" ? "🔔 تفعيل الإشعارات المنبثقة" : "🔔 Enable Push Notifications"}
+                </button>
+              )}
+              {notificationPermission === "granted" && (
+                <span className="px-6 py-3 bg-green-50 text-green-600 rounded-2xl font-bold text-xs border border-green-100 flex items-center gap-2 select-none">
+                  <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
+                  {lang === "ar" ? "الإشعارات مفعلة" : "Notifications Active"}
+                </span>
+              )}
+              <button
+                onClick={() => {
+                  setIsAdminAuth(false);
+                  setAdminPass("");
+                  setAdminRole(null);
+                  setCurrentUser(null);
+                  localStorage.removeItem("morenoAdminAuth");
+                  localStorage.removeItem("morenoAdminRole");
+                  localStorage.removeItem("morenoCurrentUser");
+                }}
+                className="px-8 py-3 bg-red-50 text-red-500 rounded-2xl font-black text-sm hover:bg-red-500 hover:text-white transition-all shadow-sm border border-red-100 flex items-center gap-2 cursor-pointer"
+              >
+                <XCircle size={18} />
+                {t.logout}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1422,16 +1545,21 @@ function AdminView({
                         )}
                         {b.status === "confirmed" && (
                           <button
-                            onClick={async () =>
-                              await updateDoc(
-                                doc(db, "bookings", b.id.toString()),
-                                {
-                                  status: "completed",
-                                  updatedBy: currentUser.name,
-                                  updatedAt: serverTimestamp(),
-                                },
-                              )
-                            }
+                            onClick={async () => {
+                              try {
+                                await updateDoc(
+                                  doc(db, "bookings", b.id.toString()),
+                                  {
+                                    status: "completed",
+                                    updatedBy: currentUser.name,
+                                    updatedAt: serverTimestamp(),
+                                  },
+                                );
+                                setShareBooking(b);
+                              } catch (err) {
+                                console.error("Error completing booking:", err);
+                              }
+                            }}
                             className="bg-brand-blue text-white px-4 py-2 rounded-xl hover:bg-brand-blueHover font-bold shadow-sm transition-all text-sm flex items-center gap-1"
                           >
                             <Check size={16} /> {t.complete}
@@ -1456,9 +1584,18 @@ function AdminView({
                         )}
                         <button
                           onClick={() => printReceipt(b)}
-                          className="bg-brand-blue/10 text-brand-blue px-3 py-2 rounded-xl hover:bg-brand-blue/20 font-bold shadow-sm transition-all text-sm flex items-center gap-1"
+                          title={lang === "ar" ? "طباعة الفاتورة" : "Print Receipt"}
+                          className="bg-brand-blue/10 text-brand-blue px-3 py-2 rounded-xl hover:bg-brand-blue/20 font-bold shadow-sm transition-all text-sm flex items-center gap-1 cursor-pointer"
                         >
                           <Printer size={16} />
+                        </button>
+
+                        <button
+                          onClick={() => printKitchenTicket(b)}
+                          title={lang === "ar" ? "شيت المطبخ" : "Kitchen Ticket"}
+                          className="bg-orange-500/10 text-orange-600 px-3 py-2 rounded-xl hover:bg-orange-500/20 font-bold shadow-sm transition-all text-sm flex items-center gap-1 cursor-pointer"
+                        >
+                          <ChefHat size={16} />
                         </button>
 
                         {/* Edit Button for Manager/Admin */}
@@ -1551,7 +1688,8 @@ function AdminView({
               isSuperAdmin={isSuperAdmin}
               lang={lang}
             />
-            <BestSellersChart bookings={bookings} t={t} lang={lang} />
+            <AnalyticsDashboard bookings={bookings} t={t} lang={lang} />
+            <FeedbackPanel db={db} t={t} lang={lang} showToast={showToast} />
 
             {/* User Management for Super Admin ONLY */}
             {isSuperAdmin && (
@@ -1570,37 +1708,6 @@ function AdminView({
           </div>
         )}
 
-        {/* Weekly Trend Chart */}
-        <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-stone-100 animate-fade-in mt-12">
-          <h3 className="text-xl font-bold text-brand-blue mb-8 flex items-center gap-3">
-            <BarChart size={24} className="text-purple-500" />
-            {t.weeklyTrend}
-          </h3>
-          <div className="flex items-end justify-between gap-2 h-48 px-2">
-            {weeklyData.map((d, i) => (
-              <div
-                key={d.date}
-                className="flex-1 flex flex-col items-center group"
-              >
-                <div
-                  className={`w-full rounded-t-xl transition-all duration-500 relative ${i === 6 ? "bg-brand-orange" : "bg-stone-200 group-hover:bg-stone-300"}`}
-                  style={{
-                    height: `${(d.count / maxWeeklyCount) * 100}%`,
-                    minHeight: "8px",
-                  }}
-                >
-                  <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-stone-800 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity font-bold">
-                    {d.count}
-                  </div>
-                </div>
-                <p className="text-[10px] text-stone-400 font-bold mt-4 uppercase rotate-[-45deg] md:rotate-0">
-                  {i === 6 ? t.today : d.date.split("-").slice(1).join("/")}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-
         {/* QR Code Section */}
         <div className="bg-white p-8 rounded-[2rem] shadow-xl border border-stone-100 flex flex-col items-center text-center mt-12 animate-fade-in">
           <h3 className="text-2xl font-bold text-brand-blue mb-6">
@@ -1608,7 +1715,7 @@ function AdminView({
           </h3>
           <div className="bg-stone-50 p-6 rounded-3xl shadow-inner border border-stone-200">
             <QRCodeSVG
-              value="https://morenohorizon.netlify.app"
+              value="https://moreno-horizon-restaurant.vercel.app/"
               size={200}
               fgColor="#1e293b"
             />
@@ -1618,6 +1725,95 @@ function AdminView({
           </p>
         </div>
       </div>
+
+      {/* Feedback Share Modal Overlay */}
+      {shareBooking && (
+        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-fade-in no-print">
+          <div className="bg-white/95 backdrop-blur-xl p-8 rounded-[2.5rem] shadow-2xl border border-stone-100 max-w-lg w-full relative overflow-hidden animate-scale-up">
+            <div className="absolute top-0 left-0 w-full h-3 bg-gradient-to-r from-amber-400 via-brand-orange to-brand-blue"></div>
+            
+            <button
+              onClick={() => setShareBooking(null)}
+              className="absolute top-6 right-6 p-2 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-full transition-all"
+            >
+              <XCircle size={22} />
+            </button>
+
+            <div className="text-center mb-6">
+              <span className="bg-amber-50 text-amber-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider inline-block mb-3 shadow-sm">
+                ⭐ {lang === "ar" ? "نظام التقييم التلقائي" : "Automated Feedback System"}
+              </span>
+              <h3 className="text-2xl font-black text-brand-blue leading-tight">
+                {lang === "ar" ? "إرسال رابط استبيان النزيل" : "Send Guest Survey Link"}
+              </h3>
+              <p className="text-stone-400 text-xs mt-1.5 font-bold">
+                {lang === "ar"
+                  ? `الحجز الخاص بـ: ${shareBooking.name} (غرفة ${shareBooking.room})`
+                  : `Booking for: ${shareBooking.name} (Room ${shareBooking.room})`}
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              {/* Info panel */}
+              <div className="bg-stone-50 p-4 rounded-2xl border border-stone-100 text-xs text-stone-500 font-bold space-y-1">
+                <div className="flex justify-between">
+                  <span>{lang === "ar" ? "المطعم:" : "Restaurant:"}</span>
+                  <span className="text-brand-blue">{shareBooking.restaurant}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>{lang === "ar" ? "رقم الهاتف:" : "Phone:"}</span>
+                  <span className="text-stone-700" dir="ltr">{shareBooking.phone}</span>
+                </div>
+              </div>
+
+              {/* Message preview */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-stone-400 uppercase tracking-wider block">
+                  {lang === "ar" ? "معاينة الرسالة المقترحة" : "Suggested Message Preview"}
+                </label>
+                <div className="bg-stone-50/50 p-4 rounded-xl border border-stone-200 text-stone-600 text-xs font-semibold leading-relaxed whitespace-pre-wrap shadow-inner relative">
+                  {lang === "ar"
+                    ? `مرحباً ${shareBooking.name}، يسعدنا جداً أنك شاركتنا وجبة العشاء اليوم في ${shareBooking.restaurant} الفاخر بمنتجع Moreno Horizon! 🥰\n\nنود معرفة رأيك وتقييمك لتجربتك معنا لمساعدتنا في تحسين خدماتنا وتقديم تجربة تليق بك دائماً 🌟\n\nرابط التقييم السريع:\n${window.location.origin}?view=feedback&id=${shareBooking.id}`
+                    : `Hi ${shareBooking.name}, we hope you had an exquisite dining experience with us today at the Moreno Horizon ${shareBooking.restaurant}! 🥰\n\nWe would love to hear your feedback to help us continually elevate our services for your comfort 🌟\n\nQuick Rating Link:\n${window.location.origin}?view=feedback&id=${shareBooking.id}`}
+                </div>
+              </div>
+
+              {/* Actions row */}
+              <div className="grid grid-cols-2 gap-4 mt-6">
+                <button
+                  onClick={() => {
+                    const msg = lang === "ar"
+                      ? `مرحباً ${shareBooking.name}، يسعدنا جداً أنك شاركتنا وجبة العشاء اليوم في ${shareBooking.restaurant} الفاخر بمنتجع Moreno Horizon! 🥰\n\nنود معرفة رأيك وتقييمك لتجربتك معنا لمساعدتنا في تحسين خدماتنا وتقديم تجربة تليق بك دائماً 🌟\n\nرابط التقييم السريع:\n${window.location.origin}?view=feedback&id=${shareBooking.id}`
+                      : `Hi ${shareBooking.name}, we hope you had an exquisite dining experience with us today at the Moreno Horizon ${shareBooking.restaurant}! 🥰\n\nWe would love to hear your feedback to help us continually elevate our services for your comfort 🌟\n\nQuick Rating Link:\n${window.location.origin}?view=feedback&id=${shareBooking.id}`;
+                    
+                    const cleanPhone = shareBooking.phone.replace(/[+\s-]/g, "");
+                    const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+                    window.open(whatsappUrl, "_blank");
+                    setShareBooking(null);
+                  }}
+                  className="bg-green-500 hover:bg-green-600 text-white py-3 px-4 rounded-xl font-black text-xs flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
+                >
+                  <Share2 size={16} />
+                  {lang === "ar" ? "إرسال عبر WhatsApp" : "Send via WhatsApp"}
+                </button>
+
+                <button
+                  onClick={() => {
+                    const link = `${window.location.origin}?view=feedback&id=${shareBooking.id}`;
+                    navigator.clipboard.writeText(link);
+                    showToast(lang === "ar" ? "تم نسخ رابط التقييم بنجاح!" : "Feedback link copied!");
+                    setShareBooking(null);
+                  }}
+                  className="bg-stone-100 hover:bg-stone-200 text-stone-700 py-3 px-4 rounded-xl font-black text-xs flex items-center justify-center gap-2 border border-stone-200 transition-all cursor-pointer"
+                >
+                  <Copy size={16} />
+                  {lang === "ar" ? "نسخ الرابط فقط" : "Copy Link Only"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

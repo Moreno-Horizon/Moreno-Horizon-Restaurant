@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { ArrowRight } from "lucide-react";
 
-const Hero = memo(({ t, setView, setToast }) => {
+const Hero = memo(({ t, setView }) => {
   return (
     <div>
       <div className="relative min-h-[100dvh] flex items-center justify-center text-center text-white px-4">

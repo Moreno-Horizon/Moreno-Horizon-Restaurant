@@ -1,4 +1,4 @@
-import React, { memo, useState } from "react";
+import { memo, useState } from "react";
 
 const TrackView = memo(({ t, bookings }) => {
   const [trackPhone, setTrackPhone] = useState("");
@@ -90,5 +90,7 @@ const TrackView = memo(({ t, bookings }) => {
     </div>
   );
 });
+
+TrackView.displayName = "TrackView";
 
 export default TrackView;
