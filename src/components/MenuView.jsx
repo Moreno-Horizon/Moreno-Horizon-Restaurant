@@ -150,10 +150,13 @@ const MenuView = memo(({
 
                 {/* Items — horizontal cards */}
                 <div className="flex flex-col gap-3">
-                  {categoryItems.map((item) => (
+                  {categoryItems.map((item, index) => (
                     <div
                       key={item.id}
-                      className="bg-white rounded-2xl overflow-hidden shadow-sm border border-stone-100 flex flex-row items-stretch"
+                      className="bg-white rounded-2xl overflow-hidden shadow-sm border border-stone-100 flex flex-row items-stretch animate-staggered-slide-up"
+                      style={{
+                        animationDelay: `${index * 0.08}s`,
+                      }}
                     >
                       <img
                         src={item.img}

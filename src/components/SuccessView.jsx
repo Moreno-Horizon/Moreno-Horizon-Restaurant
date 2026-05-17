@@ -1,5 +1,88 @@
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
 import { CheckCircle, ArrowRight, Star } from "lucide-react";
+
+const CONFETTI_COLORS = ["#34E0A1", "#f97316", "#3b82f6", "#ec4899", "#eab308", "#a855f7"];
+const CONFETTI_SHAPES = ["circle", "square", "ribbon"];
+
+const ConfettiEmitter = memo(() => {
+  const [pieces, setPieces] = useState([]);
+
+  useEffect(() => {
+    // Generate 55 elegant falling confetti flakes distributed instantly
+    const list = Array.from({ length: 55 }).map((_, i) => {
+      const size = Math.random() * 8 + 6; // size between 6px and 14px
+      const color = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
+      const shape = CONFETTI_SHAPES[Math.floor(Math.random() * CONFETTI_SHAPES.length)];
+      const left = Math.random() * 100;
+      const delay = Math.random() * -6; // start instantly pre-scattered!
+      const duration = Math.random() * 4 + 4; // falling duration between 4s and 8s
+      const sway = Math.random() * 60 - 30; // sideways sway offset
+      return {
+        id: i,
+        size,
+        color,
+        shape,
+        left,
+        delay,
+        duration,
+        sway,
+      };
+    });
+    setPieces(list);
+  }, []);
+
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden z-20 select-none">
+      <style>{`
+        @keyframes fall-confetti {
+          0% {
+            transform: translateY(-5vh) rotate(0deg) translateX(0);
+            opacity: 1;
+          }
+          90% {
+            opacity: 1;
+          }
+          100% {
+            transform: translateY(105vh) rotate(720deg) translateX(var(--sway-offset));
+            opacity: 0;
+          }
+        }
+        .confetti-flake {
+          position: absolute;
+          top: -20px;
+          animation: fall-confetti linear infinite;
+          will-change: transform;
+        }
+      `}</style>
+      {pieces.map((p) => {
+        let rounded = "rounded-none";
+        if (p.shape === "circle") rounded = "rounded-full";
+        if (p.shape === "ribbon") rounded = "rounded-b-md rounded-t-sm";
+
+        const width = p.shape === "ribbon" ? "5px" : `${p.size}px`;
+        const height = p.shape === "ribbon" ? "18px" : `${p.size}px`;
+
+        return (
+          <div
+            key={p.id}
+            className={`confetti-flake ${rounded}`}
+            style={{
+              width,
+              height,
+              backgroundColor: p.color,
+              left: `${p.left}%`,
+              animationDelay: `${p.delay}s`,
+              animationDuration: `${p.duration}s`,
+              "--sway-offset": `${p.sway}px`,
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+});
+
+ConfettiEmitter.displayName = "ConfettiEmitter";
 
 const SuccessView = memo(({ t, setView }) => {
   const reviews = [
@@ -31,6 +114,9 @@ const SuccessView = memo(({ t, setView }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-4 overflow-hidden animate-fade-in">
+      {/* Confetti celebration rain effect */}
+      <ConfettiEmitter />
+
       {/* Background Image with Overlay */}
       <div 
         className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-all duration-1000 scale-105"
@@ -39,10 +125,11 @@ const SuccessView = memo(({ t, setView }) => {
         <div className="absolute inset-0 bg-brand-blue/60 backdrop-blur-sm"></div>
       </div>
 
-      <div className="relative z-10 w-full max-w-2xl bg-white/10 backdrop-blur-xl border border-white/20 p-8 md:p-12 rounded-[3rem] shadow-2xl flex flex-col items-center text-center overflow-y-auto max-h-[90vh] custom-scrollbar">
+      <div className="relative z-10 w-full max-w-2xl bg-white/10 backdrop-blur-xl border border-white/20 p-8 md:p-12 rounded-[3rem] shadow-2xl flex flex-col items-center text-center overflow-y-auto max-h-[90vh] custom-scrollbar animate-scale-in">
         <div className="relative mb-6">
           <div className="absolute inset-0 bg-[#34E0A1] blur-[40px] opacity-30 animate-pulse"></div>
-          <CheckCircle size={80} className="text-[#34E0A1] relative z-10 animate-scale-in" />
+          {/* Elastic bounce spring effect on green check circle badge */}
+          <CheckCircle size={80} className="text-[#34E0A1] relative z-10 animate-elastic-bounce" />
         </div>
 
         <h2 className="text-3xl md:text-5xl font-serif text-white mb-4 drop-shadow-lg">
@@ -67,7 +154,7 @@ const SuccessView = memo(({ t, setView }) => {
               >
                 <div className="flex items-center gap-4">
                   <div className="bg-white/20 p-2 rounded-xl backdrop-blur-sm group-hover:rotate-12 transition-transform">
-                    {rev.icon}
+                     {rev.icon}
                   </div>
                   <div className="text-left">
                     <span className={`${rev.textColor} block font-black text-base`}>

@@ -1,5 +1,8 @@
 import { memo, useState, useEffect, useCallback, useMemo } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import { translations } from "../translations";
+import { auth } from "../firebase";
+import { signInWithEmailAndPassword } from "firebase/auth";
 import {
   Search,
   Printer,
@@ -45,7 +48,6 @@ import {
   getDocs,
   setDoc,
 } from "firebase/firestore";
-import { translations } from "../translations";
 
 function AdminView({
   t,
@@ -89,31 +91,41 @@ function AdminView({
       return;
     }
 
-    // Check users collection
+    // Firebase Auth check
     try {
+      const email = adminUser + "@moreno.local";
+      const userCredential = await signInWithEmailAndPassword(auth, email, adminPass);
+      const user = userCredential.user;
+      
       const userQuery = query(
         collection(db, "users"),
-        where("username", "==", adminUser),
-        where("password", "==", adminPass),
+        where("username", "==", adminUser)
       );
       const userSnap = await getDocs(userQuery);
+      
+      let role = "staff";
+      let name = adminUser;
+      
       if (!userSnap.empty) {
         const userData = userSnap.docs[0].data();
-        const adminData = {
-          name: userData.name,
-          username: userData.username,
-          role: userData.role,
-        };
-        setAdminRole(userData.role);
-        setCurrentUser(adminData);
-        setIsAdminAuth(true);
-        // Persist session
-        localStorage.setItem("morenoAdminAuth", "true");
-        localStorage.setItem("morenoAdminRole", userData.role);
-        localStorage.setItem("morenoCurrentUser", JSON.stringify(adminData));
-      } else {
-        showToast(t.wrongPassword);
+        role = userData.role || "staff";
+        name = userData.name || adminUser;
       }
+      
+      const adminData = {
+        name: name,
+        username: adminUser,
+        role: role,
+      };
+      
+      setAdminRole(role);
+      setCurrentUser(adminData);
+      setIsAdminAuth(true);
+      
+      localStorage.setItem("morenoAdminAuth", "true");
+      localStorage.setItem("morenoAdminRole", role);
+      localStorage.setItem("morenoCurrentUser", JSON.stringify(adminData));
+      
     } catch (e) {
       console.error("Login Error:", e);
       showToast(t.wrongPassword);
@@ -125,10 +137,25 @@ function AdminView({
   const [debouncedAdminSearch, setDebouncedAdminSearch] = useState("");
   const [adminStartDate, setAdminStartDate] = useState(todayStr);
   const [adminEndDate, setAdminEndDate] = useState(todayStr);
+  const [visibleBookingsCount, setVisibleBookingsCount] = useState(10);
+
+  useEffect(() => {
+    setVisibleBookingsCount(10);
+  }, [adminSearch, adminStartDate, adminEndDate]);
+
   const [editingBooking, setEditingBooking] = useState(null);
   const [shareBooking, setShareBooking] = useState(null);
   const [selectedMapRes, setSelectedMapRes] = useState("italian");
-  const [selectedMapTime, setSelectedMapTime] = useState("18:30 - 20:00");
+  const [selectedMapTime, setSelectedMapTime] = useState(settings?.shift1 || "18:30 - 19:30");
+
+  useEffect(() => {
+    if (settings && settings.shift1) {
+      setSelectedMapTime(settings.shift1);
+    } else {
+      setSelectedMapTime("18:30 - 19:30");
+    }
+  }, [settings]);
+
   const [selectedMapTable, setSelectedMapTable] = useState(null);
   const [movingBooking, setMovingBooking] = useState(null);
   
@@ -245,10 +272,44 @@ function AdminView({
     const count = settings.tablesCountItalian !== undefined && settings.tablesCountItalian !== "" ? Number(settings.tablesCountItalian) : 12;
     const list = [];
     
-    // Dynamically balance count of tables across zones:
     const indoorCount = Math.ceil(count * 0.6);
     const vipCount = Math.ceil(count * 0.2);
     const outdoorCount = count - indoorCount - vipCount;
+
+    // Helper to generate dynamic grid spacing:
+    const layoutZone = (zoneCount, startX, width, startY, height, isIndoor = false) => {
+      if (zoneCount <= 0) return [];
+      
+      let rows = 2;
+      if (isIndoor) {
+        if (zoneCount <= 6) rows = 2;
+        else if (zoneCount <= 12) rows = 3;
+        else if (zoneCount <= 20) rows = 4;
+        else rows = 5;
+      } else {
+        if (zoneCount <= 3) rows = 2;
+        else if (zoneCount <= 6) rows = 3;
+        else if (zoneCount <= 10) rows = 4;
+        else rows = 5;
+      }
+
+      const cols = Math.ceil(zoneCount / rows);
+      const points = [];
+      
+      for (let idx = 0; idx < zoneCount; idx++) {
+        const r = idx % rows;
+        const c = Math.floor(idx / rows);
+        
+        const x = cols > 1 ? startX + c * (width / (cols - 1)) : startX + width / 2;
+        const y = rows > 1 ? startY + r * (height / (rows - 1)) : startY + height / 2;
+        points.push({ x, y });
+      }
+      return points;
+    };
+
+    const indoorPoints = layoutZone(indoorCount, 8, 40, 18, 64, true);
+    const vipPoints = layoutZone(vipCount, 58, 12, 18, 64, false);
+    const outdoorPoints = layoutZone(outdoorCount, 78, 14, 18, 64, false);
 
     for (let i = 1; i <= count; i++) {
       let zone = "indoor";
@@ -259,14 +320,12 @@ function AdminView({
 
       if (i <= indoorCount) {
         zone = "indoor";
-        const idx = i - 1;
-        const cols = Math.ceil(indoorCount / 2);
-        const col = Math.floor(idx / 2);
-        const row = idx % 2;
-        x = cols > 1 ? 6 + col * (42 / (cols - 1)) : 24;
-        y = 15 + row * 45;
+        const pt = indoorPoints[i - 1];
+        if (pt) {
+          x = pt.x;
+          y = pt.y;
+        }
         
-        // Alternating table shapes and capacities for aesthetics
         if (i % 3 === 0) {
           type = "rectangle";
           seats = 6;
@@ -279,22 +338,20 @@ function AdminView({
         }
       } else if (i <= indoorCount + vipCount) {
         zone = "vip";
-        const idx = i - indoorCount - 1;
-        const cols = Math.ceil(vipCount / 2);
-        const col = Math.floor(idx / 2);
-        const row = idx % 2;
-        x = cols > 1 ? 58 + col * (12 / (cols - 1)) : 64;
-        y = 15 + row * 45;
+        const pt = vipPoints[i - indoorCount - 1];
+        if (pt) {
+          x = pt.x;
+          y = pt.y;
+        }
         type = "rectangle";
         seats = i % 2 === 0 ? 8 : 6;
       } else {
         zone = "outdoor";
-        const idx = i - indoorCount - vipCount - 1;
-        const cols = Math.ceil(outdoorCount / 3);
-        const col = Math.floor(idx / 3);
-        const row = idx % 3;
-        x = cols > 1 ? 78 + col * (14 / (cols - 1)) : 84;
-        y = 12 + row * 32;
+        const pt = outdoorPoints[i - indoorCount - vipCount - 1];
+        if (pt) {
+          x = pt.x;
+          y = pt.y;
+        }
         type = i % 2 === 0 ? "square" : "round";
         seats = i % 2 === 0 ? 4 : 2;
       }
@@ -308,10 +365,43 @@ function AdminView({
     const count = settings.tablesCountOriental !== undefined && settings.tablesCountOriental !== "" ? Number(settings.tablesCountOriental) : 8;
     const list = [];
 
-    // Dynamically balance count of tables across zones:
     const indoorCount = Math.ceil(count * 0.6);
     const vipCount = Math.ceil(count * 0.2);
     const outdoorCount = count - indoorCount - vipCount;
+
+    const layoutZone = (zoneCount, startX, width, startY, height, isIndoor = false) => {
+      if (zoneCount <= 0) return [];
+      
+      let rows = 2;
+      if (isIndoor) {
+        if (zoneCount <= 6) rows = 2;
+        else if (zoneCount <= 12) rows = 3;
+        else if (zoneCount <= 20) rows = 4;
+        else rows = 5;
+      } else {
+        if (zoneCount <= 3) rows = 2;
+        else if (zoneCount <= 6) rows = 3;
+        else if (zoneCount <= 10) rows = 4;
+        else rows = 5;
+      }
+
+      const cols = Math.ceil(zoneCount / rows);
+      const points = [];
+      
+      for (let idx = 0; idx < zoneCount; idx++) {
+        const r = idx % rows;
+        const c = Math.floor(idx / rows);
+        
+        const x = cols > 1 ? startX + c * (width / (cols - 1)) : startX + width / 2;
+        const y = rows > 1 ? startY + r * (height / (rows - 1)) : startY + height / 2;
+        points.push({ x, y });
+      }
+      return points;
+    };
+
+    const indoorPoints = layoutZone(indoorCount, 8, 40, 18, 64, true);
+    const vipPoints = layoutZone(vipCount, 58, 12, 18, 64, false);
+    const outdoorPoints = layoutZone(outdoorCount, 78, 14, 18, 64, false);
 
     for (let i = 1; i <= count; i++) {
       let zone = "indoor";
@@ -322,12 +412,11 @@ function AdminView({
 
       if (i <= indoorCount) {
         zone = "indoor";
-        const idx = i - 1;
-        const cols = Math.ceil(indoorCount / 2);
-        const col = Math.floor(idx / 2);
-        const row = idx % 2;
-        x = cols > 1 ? 6 + col * (42 / (cols - 1)) : 24;
-        y = 15 + row * 45;
+        const pt = indoorPoints[i - 1];
+        if (pt) {
+          x = pt.x;
+          y = pt.y;
+        }
 
         if (i % 3 === 0) {
           type = "rectangle";
@@ -341,22 +430,20 @@ function AdminView({
         }
       } else if (i <= indoorCount + vipCount) {
         zone = "vip";
-        const idx = i - indoorCount - 1;
-        const cols = Math.ceil(vipCount / 2);
-        const col = Math.floor(idx / 2);
-        const row = idx % 2;
-        x = cols > 1 ? 58 + col * (12 / (cols - 1)) : 64;
-        y = 15 + row * 45;
+        const pt = vipPoints[i - indoorCount - 1];
+        if (pt) {
+          x = pt.x;
+          y = pt.y;
+        }
         type = "rectangle";
         seats = i % 2 === 0 ? 8 : 6;
       } else {
         zone = "outdoor";
-        const idx = i - indoorCount - vipCount - 1;
-        const cols = Math.ceil(outdoorCount / 3);
-        const col = Math.floor(idx / 3);
-        const row = idx % 3;
-        x = cols > 1 ? 78 + col * (14 / (cols - 1)) : 84;
-        y = 12 + row * 32;
+        const pt = outdoorPoints[i - indoorCount - vipCount - 1];
+        if (pt) {
+          x = pt.x;
+          y = pt.y;
+        }
         type = "round";
         seats = 4;
       }
@@ -365,6 +452,62 @@ function AdminView({
     }
     return list;
   }, [settings.tablesCountOriental]);
+
+  const findAvailableTable = useCallback((date, restaurantId, time, guestsCount) => {
+    const requestedGuests = Number(guestsCount || 1);
+    const tablesList = restaurantId === "italian" ? ITALIAN_TABLES : ORIENTAL_TABLES;
+
+    if (!tablesList || tablesList.length === 0) return "";
+
+    const isItalianBooking = (b) => {
+      const rId = (b.resId || "").toLowerCase();
+      const rName = (b.restaurant || "").toLowerCase();
+      return rId === "italian" || rName.includes("italian") || rName.includes("إيطالي") || rName.includes("ايطالي");
+    };
+    const isOrientalBooking = (b) => {
+      const rId = (b.resId || "").toLowerCase();
+      const rName = (b.restaurant || "").toLowerCase();
+      return rId === "oriental" || rName.includes("oriental") || rName.includes("شرقي") || rName.includes("عربي");
+    };
+
+    // Filter active bookings for same date and shift/restaurant
+    const activeTimeBookings = bookings.filter((b) => {
+      const isActive = b.status === "confirmed" || b.status === "completed" || b.status === "pending";
+      const isSameDate = b.date === date;
+      const isSameRes = restaurantId === "italian" ? isItalianBooking(b) : isOrientalBooking(b);
+      const isSameTime = restaurantId === "oriental" || b.time === time;
+      return isActive && isSameDate && isSameRes && isSameTime;
+    });
+
+    const takenTableNames = new Set(
+      activeTimeBookings.filter((b) => b.tableNo).map((b) => b.tableNo.toString())
+    );
+
+    // Available tables are those not taken
+    const availableTables = tablesList.filter((table) => !takenTableNames.has(table.name));
+
+    // Best matching table: smallest seats that is >= requestedGuests
+    let qualifyingTables = availableTables.filter((table) => table.seats >= requestedGuests);
+
+    // If no single table is large enough, look at any available table
+    if (qualifyingTables.length === 0) {
+      qualifyingTables = [...availableTables];
+    }
+
+    if (qualifyingTables.length === 0) return "";
+
+    // Sort:
+    // 1. smallest seats first
+    // 2. smallest table number first
+    qualifyingTables.sort((a, b) => {
+      if (a.seats !== b.seats) {
+        return a.seats - b.seats;
+      }
+      return Number(a.name) - Number(b.name);
+    });
+
+    return qualifyingTables[0].name;
+  }, [bookings, ITALIAN_TABLES, ORIENTAL_TABLES]);
 
   const activeMapBookings = useMemo(() => {
     const targetDate = adminStartDate || todayStr;
@@ -380,7 +523,7 @@ function AdminView({
     };
 
     return bookings.filter((b) => {
-      const isConfirmed = b.status === "confirmed" || b.status === "completed";
+      const isConfirmed = b.status === "confirmed" || b.status === "completed" || b.status === "pending";
       const isSameDate = b.date === targetDate;
       const isSameRes = selectedMapRes === "italian" ? isItalianBooking(b) : isOrientalBooking(b);
       const isSameTime = selectedMapRes === "oriental" || b.time === selectedMapTime;
@@ -1749,6 +1892,57 @@ function AdminView({
           </div>
         </div>
 
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
+            <div className="absolute top-0 w-full h-1.5 bg-blue-500"></div>
+            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
+              {t.italianAvail}
+            </p>
+            <p className="text-5xl font-black text-blue-600 my-auto">
+              {italianTodayAvail}
+            </p>
+          </div>
+          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
+            <div className="absolute top-0 w-full h-1.5 bg-orange-500"></div>
+            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
+              {t.orientalAvail}
+            </p>
+            <p className="text-5xl font-black text-orange-600 my-auto">
+              {orientalTodayAvail}
+            </p>
+          </div>
+          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
+            <div className="absolute top-0 w-full h-1.5 bg-green-500"></div>
+            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
+              {t.availableTables}
+            </p>
+            <p className="text-5xl font-black text-green-600 my-auto">
+              {italianTodayAvail + orientalTodayAvail}
+            </p>
+          </div>
+          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
+            <div className="absolute top-0 w-full h-1.5 bg-brand-orange"></div>
+            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
+              {t.pendingBookings}
+            </p>
+            <p className="text-5xl font-black text-brand-orange my-auto">
+              {bookings.filter((b) => b.status === "pending").length}
+            </p>
+          </div>
+          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
+            <div className="absolute top-0 w-full h-1.5 bg-red-500"></div>
+            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
+              {t.totalPax} ({t.today})
+            </p>
+            <p className="text-5xl font-black text-red-600 my-auto">
+              {bookings
+                .filter((b) => b.date === todayStr && b.status !== "cancelled")
+                .reduce((sum, b) => sum + Number(b.guests || 0), 0)}
+            </p>
+          </div>
+        </div>
+
         {/* Bookings List */}
         <div className="bg-white rounded-[2rem] shadow-xl overflow-hidden border border-stone-100 mb-8">
           <div className="p-6 border-b border-stone-100 bg-stone-50/50 flex flex-col md:flex-row justify-between items-center gap-4">
@@ -1808,7 +2002,7 @@ function AdminView({
                     </td>
                   </tr>
                 )}
-                {filteredBookings.map((b) => (
+                {filteredBookings.slice(0, visibleBookingsCount).map((b) => (
                   <tr
                     key={b.id}
                     className="border-b border-stone-50 hover:bg-stone-50/50 transition-colors"
@@ -1882,16 +2076,23 @@ function AdminView({
                         {b.status === "pending" && (
                           <>
                             <button
-                              onClick={async () =>
+                              onClick={async () => {
+                                const updateData = {
+                                  status: "confirmed",
+                                  updatedBy: currentUser.name,
+                                  updatedAt: serverTimestamp(),
+                                };
+                                if (!b.tableNo) {
+                                  const autoTable = findAvailableTable(b.date, b.resId, b.time, b.guests);
+                                  if (autoTable) {
+                                    updateData.tableNo = autoTable;
+                                  }
+                                }
                                 await updateDoc(
                                   doc(db, "bookings", b.id.toString()),
-                                  {
-                                    status: "confirmed",
-                                    updatedBy: currentUser.name,
-                                    updatedAt: serverTimestamp(),
-                                  },
-                                )
-                              }
+                                  updateData
+                                );
+                              }}
                               className="bg-green-500 text-white px-4 py-2 rounded-xl hover:bg-green-600 font-bold shadow-sm transition-all text-sm flex items-center gap-1"
                             >
                               <CheckCircle size={16} /> {t.confirm}
@@ -1939,13 +2140,20 @@ function AdminView({
                           <button
                             onClick={async () => {
                               try {
+                                const updateData = {
+                                  status: "confirmed",
+                                  updatedBy: currentUser?.name || "Admin",
+                                  updatedAt: serverTimestamp(),
+                                };
+                                if (!b.tableNo) {
+                                  const autoTable = findAvailableTable(b.date, b.resId, b.time, b.guests);
+                                  if (autoTable) {
+                                    updateData.tableNo = autoTable;
+                                  }
+                                }
                                 await updateDoc(
                                   doc(db, "bookings", b.id.toString()),
-                                  {
-                                    status: "confirmed",
-                                    updatedBy: currentUser?.name || "Admin",
-                                    updatedAt: serverTimestamp(),
-                                  },
+                                  updateData
                                 );
                                 showToast(
                                   lang === "ar"
@@ -2004,57 +2212,21 @@ function AdminView({
               </tbody>
             </table>
           </div>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
-            <div className="absolute top-0 w-full h-1.5 bg-blue-500"></div>
-            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
-              {t.italianAvail}
-            </p>
-            <p className="text-5xl font-black text-blue-600 my-auto">
-              {italianTodayAvail}
-            </p>
-          </div>
-          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
-            <div className="absolute top-0 w-full h-1.5 bg-orange-500"></div>
-            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
-              {t.orientalAvail}
-            </p>
-            <p className="text-5xl font-black text-orange-600 my-auto">
-              {orientalTodayAvail}
-            </p>
-          </div>
-          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
-            <div className="absolute top-0 w-full h-1.5 bg-green-500"></div>
-            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
-              {t.availableTables}
-            </p>
-            <p className="text-5xl font-black text-green-600 my-auto">
-              {italianTodayAvail + orientalTodayAvail}
-            </p>
-          </div>
-          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
-            <div className="absolute top-0 w-full h-1.5 bg-brand-orange"></div>
-            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
-              {t.pendingBookings}
-            </p>
-            <p className="text-5xl font-black text-brand-orange my-auto">
-              {bookings.filter((b) => b.status === "pending").length}
-            </p>
-          </div>
-          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
-            <div className="absolute top-0 w-full h-1.5 bg-red-500"></div>
-            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
-              {t.totalPax} ({t.today})
-            </p>
-            <p className="text-5xl font-black text-red-600 my-auto">
-              {bookings
-                .filter((b) => b.date === todayStr && b.status !== "cancelled")
-                .reduce((sum, b) => sum + Number(b.guests || 0), 0)}
-            </p>
-          </div>
+          {filteredBookings.length > visibleBookingsCount && (
+            <div className="p-6 border-t border-stone-100 flex justify-center no-print bg-stone-50/30">
+              <button
+                onClick={() => setVisibleBookingsCount((prev) => prev + 10)}
+                className="bg-brand-blue/10 hover:bg-brand-blue text-brand-blue hover:text-white px-8 py-3.5 rounded-2xl font-black text-sm transition-all shadow-sm hover:shadow-lg hover:shadow-brand-blue/15 flex items-center gap-2 cursor-pointer transform hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98]"
+              >
+                <span>✨</span>
+                <span>
+                  {lang === "ar"
+                    ? `عرض المزيد (+${Math.min(10, filteredBookings.length - visibleBookingsCount)} من أصل ${filteredBookings.length - visibleBookingsCount} حجوزات متبقية)`
+                    : `Show More (+${Math.min(10, filteredBookings.length - visibleBookingsCount)} of ${filteredBookings.length - visibleBookingsCount} remaining)`}
+                </span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* ========================================================================= */}
@@ -2145,29 +2317,33 @@ function AdminView({
               <div className="flex gap-2 bg-white p-1.5 rounded-2xl shadow-inner border border-stone-200">
                 <button
                   onClick={() => {
-                    setSelectedMapTime("18:30 - 20:00");
+                    setSelectedMapTime(settings?.shift1 || "18:30 - 19:30");
                     setSelectedMapTable(null);
                   }}
                   className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                    selectedMapTime === "18:30 - 20:00"
+                    selectedMapTime === (settings?.shift1 || "18:30 - 19:30")
                       ? "bg-stone-900 text-white shadow-sm"
                       : "text-stone-500 hover:bg-stone-50"
                   }`}
                 >
-                  {lang === "ar" ? "الفترة الأولى (18:30)" : "First Shift (18:30)"}
+                  {lang === "ar"
+                    ? `${t.shift1Label || "الفترة الأولى"} (${(settings?.shift1 || "18:30 - 19:30").split(" - ")[0]})`
+                    : `${t.shift1Label || "First Shift"} (${(settings?.shift1 || "18:30 - 19:30").split(" - ")[0]})`}
                 </button>
                 <button
                   onClick={() => {
-                    setSelectedMapTime("20:30 - 22:00");
+                    setSelectedMapTime(settings?.shift2 || "20:00 - 21:00");
                     setSelectedMapTable(null);
                   }}
                   className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                    selectedMapTime === "20:30 - 22:00"
+                    selectedMapTime === (settings?.shift2 || "20:00 - 21:00")
                       ? "bg-stone-900 text-white shadow-sm"
                       : "text-stone-500 hover:bg-stone-50"
                   }`}
                 >
-                  {lang === "ar" ? "الفترة الثانية (20:30)" : "Second Shift (20:30)"}
+                  {lang === "ar"
+                    ? `${t.shift2Label || "الفترة الثانية"} (${(settings?.shift2 || "20:00 - 21:00").split(" - ")[0]})`
+                    : `${t.shift2Label || "Second Shift"} (${(settings?.shift2 || "20:00 - 21:00").split(" - ")[0]})`}
                 </button>
               </div>
             )}
@@ -2219,16 +2395,7 @@ function AdminView({
                 {/* Subtle Floor Grid lines */}
                 <div className="absolute inset-0 bg-[linear-gradient(to_right,#2d2d30_1px,transparent_1px),linear-gradient(to_bottom,#2d2d30_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-30"></div>
                 
-                {/* Dining Zone Titles */}
-                <div className="absolute top-4 left-6 pointer-events-none opacity-20 text-white font-black text-lg tracking-widest uppercase">
-                  {lang === "ar" ? "الصالة الداخلية" : "Indoor Room"}
-                </div>
-                <div className="absolute top-4 left-[58%] pointer-events-none opacity-20 text-white font-black text-lg tracking-widest uppercase">
-                  {lang === "ar" ? "الركن الفاخر" : "VIP Suite"}
-                </div>
-                <div className="absolute top-4 right-6 pointer-events-none opacity-20 text-white font-black text-lg tracking-widest uppercase">
-                  {lang === "ar" ? "التراس الخارجي" : "Outdoor Terrace"}
-                </div>
+                {/* Dining Zone Division */}
 
                 {/* Zone Dividers (Subtle dashed borders) */}
                 <div className="absolute top-0 bottom-0 left-[55%] border-l border-dashed border-stone-700/50 pointer-events-none"></div>
@@ -2242,19 +2409,19 @@ function AdminView({
                   const isMoveTarget = movingBooking && !isOccupied;
 
                   // Node color styles
-                  let statusClass = "border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:scale-[1.04]";
+                  let statusClass = "border-emerald-500/30 bg-stone-900/60 text-emerald-400 neon-glow-green hover:border-emerald-400/60 hover:bg-emerald-500/10 z-10";
                   let pulseDot = "bg-emerald-500";
 
                   if (isOccupied) {
-                    statusClass = "border-rose-500/40 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 hover:scale-[1.04]";
+                    statusClass = "border-rose-500/30 bg-stone-900/60 text-rose-400 neon-glow-rose hover:border-rose-400/60 hover:bg-rose-500/10 z-10";
                     pulseDot = "bg-rose-500";
                   }
                   if (isSelected) {
-                    statusClass = "border-blue-500 bg-blue-500/20 text-blue-300 scale-[1.06] shadow-lg shadow-blue-500/10 z-10";
+                    statusClass = "border-blue-500/60 bg-stone-850/80 text-blue-300 neon-glow-blue z-20 selected-table";
                     pulseDot = "bg-blue-500";
                   }
                   if (isMoveTarget) {
-                    statusClass = "border-blue-400 bg-blue-500/10 text-blue-400 hover:bg-blue-500/25 cursor-pointer animate-pulse z-10 hover:scale-[1.06]";
+                    statusClass = "border-blue-400/50 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 cursor-pointer animate-pulse z-20";
                     pulseDot = "bg-blue-400";
                   }
 
@@ -2277,11 +2444,10 @@ function AdminView({
                           setSelectedMapTable(t);
                         }
                       }}
-                      className={`absolute flex flex-col items-center justify-center border-2 transition-all duration-300 cursor-pointer shadow-md ${shapeClass} ${statusClass}`}
+                      className={`absolute flex flex-col items-center justify-center border-2 shadow-lg backdrop-blur-md floor-table-btn ${shapeClass} ${statusClass}`}
                       style={{
                         left: `${t.x}%`,
                         top: `${t.y}%`,
-                        transform: "translate(-50%, -50%)",
                       }}
                     >
                       {/* Pulsing indicator top-right */}
@@ -2788,13 +2954,20 @@ function AdminView({
                     <button
                       onClick={async () => {
                         try {
+                          const updateData = {
+                            status: "confirmed",
+                            updatedBy: currentUser?.name || "Admin",
+                            updatedAt: serverTimestamp(),
+                          };
+                          if (!b.tableNo) {
+                            const autoTable = findAvailableTable(b.date, b.resId, b.time, b.guests);
+                            if (autoTable) {
+                              updateData.tableNo = autoTable;
+                            }
+                          }
                           await updateDoc(
                             doc(db, "bookings", b.id.toString()),
-                            {
-                              status: "confirmed",
-                              updatedBy: currentUser?.name || "Admin",
-                              updatedAt: serverTimestamp(),
-                            },
+                            updateData
                           );
                           showToast(
                             lang === "ar"

@@ -1,4 +1,19 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { initializeApp } from "firebase/app";
+import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
+
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+};
+
+const secondaryApp = initializeApp(firebaseConfig, "Secondary");
+const secondaryAuth = getAuth(secondaryApp);
+
 import {
   ResponsiveContainer,
   AreaChart,
@@ -373,14 +388,38 @@ export const SettingsPanel = React.memo(function SettingsPanel({
           </div>
         </div>
       </div>
-      <div className="mt-10 flex justify-end">
-        <button
-          onClick={() => onSave(localSettings)}
-          className="bg-brand-blue text-white px-10 py-4 rounded-2xl font-bold hover:bg-brand-blueHover transition-all shadow-lg flex items-center gap-2"
-        >
-          <CheckCircle size={20} />
-          {t.saveSettings}
-        </button>
+      <div className="mt-10 flex flex-col md:flex-row justify-between items-center gap-6 pt-8 border-t border-stone-100">
+        <div className="text-start space-y-1">
+          <h5 className="font-black text-stone-700 text-sm flex items-center gap-2">
+            <span>🔄</span>
+            <span>{lang === "ar" ? "بث تحديث فوري لجميع الأجهزة" : "Broadcast Instant Update to All Devices"}</span>
+          </h5>
+          <p className="text-stone-400 text-xs font-bold max-w-md leading-relaxed">
+            {lang === "ar" 
+              ? "اضغط لتنبيه وتحديث التطبيق تلقائياً على هواتف وأجهزة جميع العملاء والنزلاء المتصلين الآن فوراً." 
+              : "Click to immediately notify and update the app on all currently connected client devices."}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-4 w-full md:w-auto justify-end">
+          <button
+            onClick={() => {
+              const newVer = Date.now().toString();
+              const updated = { ...localSettings, appVersion: newVer };
+              setLocalSettings(updated);
+              onSave(updated);
+            }}
+            className="bg-gradient-to-r from-amber-500 to-brand-orange text-white px-6 py-3.5 rounded-2xl font-black text-xs hover:-translate-y-0.5 transition-all shadow-lg shadow-brand-orange/20 flex items-center gap-2 cursor-pointer"
+          >
+            {lang === "ar" ? "تحديث أجهزة العملاء الآن" : "Update Client Devices Now"}
+          </button>
+          <button
+            onClick={() => onSave(localSettings)}
+            className="bg-brand-blue text-white px-10 py-4 rounded-2xl font-bold hover:bg-brand-blueHover transition-all shadow-lg flex items-center gap-2"
+          >
+            <CheckCircle size={20} />
+            {t.saveSettings}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -400,13 +439,21 @@ export const UsersPanel = React.memo(function UsersPanel({
   const handleAddUser = async () => {
     if (!newUserName || !newUserUsername || !newUserPass) return;
     try {
-      await addDoc(collection(db, "users"), {
+      const email = newUserUsername + "@moreno.local";
+      
+      // 1. Create user in Firebase Auth using secondary instance
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, newUserPass);
+      const user = userCredential.user;
+      
+      // 2. Save user profile in Firestore with UID as document ID
+      await setDoc(doc(db, "users", user.uid), {
         name: newUserName,
         username: newUserUsername,
-        password: newUserPass,
+        email: email,
         role: newUserRole,
         createdAt: serverTimestamp(),
       });
+      
       setNewUserName("");
       setNewUserUsername("");
       setNewUserPass("");

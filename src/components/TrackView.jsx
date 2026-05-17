@@ -76,7 +76,7 @@ const TrackView = memo(({ t, bookings }) => {
                     </div>
                   </div>
                   <p className="text-sm font-bold text-stone-500 dark:text-stone-400 mb-2">
-                    {b.restaurant} | {t.roomNumber}: {b.room}
+                    {b.restaurant} | {t.roomNumber}: {b.room} {b.tableNo ? `| ${t.dir === "rtl" ? "طاولة" : "Table"}: ${b.tableNo}` : ""}
                   </p>
                   <p className="text-stone-600 dark:text-stone-300 text-sm whitespace-pre-wrap">
                     {b.orderDetails}

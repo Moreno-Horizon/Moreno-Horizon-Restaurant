@@ -61,32 +61,34 @@ function BookingView({
                   <span className="text-stone-400 font-bold text-sm md:text-base">
                     / {(() => {
                       if (bookingData.restaurant === "italian") {
-                        return bookingData.time ? (settings.shiftLimitItalian || 20) : (settings.capacityItalian || 40);
+                        return bookingData.time ? (settings.shiftLimitItalian || 40) : (settings.capacityItalian || 80);
                       } else {
-                        return settings.capacityOriental || 25;
+                        return settings.capacityOriental || 30;
                       }
                     })()}
                   </span>
                 </div>
               </div>
               
-              <div className="w-full h-3 md:h-4 bg-stone-200/60 rounded-full overflow-hidden shadow-inner relative">
+              <div className="w-full h-4 md:h-5 bg-stone-200/60 rounded-full overflow-hidden shadow-inner relative liquid-progress">
                 <div
-                  className={`h-full rounded-full transition-all duration-1000 ease-out ${
-                    availableTablesCount < 5
-                      ? "bg-gradient-to-r from-red-500 to-red-600"
-                      : availableTablesCount < 15
-                      ? "bg-gradient-to-r from-orange-400 to-brand-orange"
-                      : "bg-gradient-to-r from-[#34E0A1] to-[#2bb884]"
+                  className={`liquid-progress-fill h-full rounded-full transition-all duration-1000 ease-out ${
+                    typeof availableTablesCount === "number" && availableTablesCount < 5
+                      ? "bg-gradient-to-r from-red-500 to-red-600 shadow-[0_0_12px_rgba(239,68,68,0.4)]"
+                      : typeof availableTablesCount === "number" && availableTablesCount < 15
+                      ? "bg-gradient-to-r from-orange-400 to-brand-orange shadow-[0_0_12px_rgba(249,115,22,0.4)]"
+                      : "bg-gradient-to-r from-[#34E0A1] to-[#2bb884] shadow-[0_0_12px_rgba(52,224,161,0.4)]"
                   }`}
                   style={{
-                    width: `${Math.max(5, Math.min(100, ((typeof availableTablesCount === "number" ? availableTablesCount : 0) / (() => {
-                      if (bookingData.restaurant === "italian") {
-                        return bookingData.time ? (settings.shiftLimitItalian || 20) : (settings.capacityItalian || 40);
-                      } else {
-                        return settings.capacityOriental || 25;
-                      }
-                    })()) * 100))}%`,
+                    width: `${typeof availableTablesCount === "number"
+                      ? Math.max(5, Math.min(100, (availableTablesCount / (() => {
+                          if (bookingData.restaurant === "italian") {
+                            return bookingData.time ? (settings.shiftLimitItalian || 40) : (settings.capacityItalian || 80);
+                          } else {
+                            return settings.capacityOriental || 30;
+                          }
+                        })()) * 100))
+                      : 100}%`,
                   }}
                 ></div>
               </div>

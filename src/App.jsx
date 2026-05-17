@@ -36,6 +36,7 @@ import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import Hero from "./components/Hero";
 import CartSidebar from "./components/CartSidebar";
+import SparklesBackground from "./components/SparklesBackground";
 // import OtpModal from "./components/OtpModal"; // Deferred for now
 
 // Lazy Loaded Views (Loaded on demand to improve performance)
@@ -108,9 +109,68 @@ const pwaTranslations = {
   }
 };
 
+const LOCAL_APP_VERSION = "2026.05.11.2";
+
+const updateTranslations = {
+  ar: {
+    title: "تحديث جديد متوفر!",
+    desc: "تم إطلاق نسخة جديدة ومحسنة من التطبيق لتجربة أسرع وأكثر سلاسة. جاري تطبيق التحديث تلقائياً...",
+    btnUpdate: "تحديث الآن",
+    loading: "جاري التحديث..."
+  },
+  en: {
+    title: "New Update Available!",
+    desc: "A new and improved version of the app has been released. Applying the update automatically...",
+    btnUpdate: "Update Now",
+    loading: "Updating..."
+  },
+  it: {
+    title: "Nuovo aggiornamento disponibile!",
+    desc: "È stata rilasciata una nuova versione migliorata dell'app. Applicazione dell'aggiornamento...",
+    btnUpdate: "Aggiorna ora",
+    loading: "Aggiornamento..."
+  },
+  de: {
+    title: "Neues Update verfügbar!",
+    desc: "Eine neue und verbesserte Version der App wurde veröffentlicht. Update wird automatisch angewendet...",
+    btnUpdate: "Jetzt aktualisieren",
+    loading: "Wird aktualisiert..."
+  },
+  ru: {
+    title: "Доступно новое обновление!",
+    desc: "Выпущена новая улучшенная версия приложения. Обновление применяется автоматически...",
+    btnUpdate: "Обновить сейчас",
+    loading: "Обновление..."
+  },
+  fr: {
+    title: "Nouvelle mise à jour disponible !",
+    desc: "Une nouvelle version améliorée de l'application est disponible. Application de la mise à jour...",
+    btnUpdate: "Mettre à jour",
+    loading: "Mise à jour..."
+  },
+  pl: {
+    title: "Dostępna nowa aktualizacja!",
+    desc: "Wydano nową, ulepszoną wersję aplikacji. Aktualizacja jest stosowana automatycznie...",
+    btnUpdate: "Aktualizuj teraz",
+    loading: "Aktualizowanie..."
+  }
+};
+
 export default function App() {
   // Computed once per mount — date doesn't change during a session
   const todayStr = useMemo(() => getLocalDate(), []);
+
+  const [settings, setSettings] = useState({
+    adminPass: "",
+    shift1: "18:30 - 19:30",
+    shift2: "20:00 - 21:00",
+    shiftOri: "19:00 - 20:00",
+    capacityItalian: 80,
+    capacityOriental: 30,
+    shiftLimitItalian: 40,
+    isClosedItalian: false,
+    isClosedOriental: false,
+  });
 
   const [lang, setLang] = useState(
     () => localStorage.getItem("prefLang") || "ar",
@@ -178,6 +238,49 @@ export default function App() {
   );
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showPwaBanner, setShowPwaBanner] = useState(false);
+
+  const [showUpdatePrompt, setShowUpdatePrompt] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const handleApplyUpdate = useCallback(() => {
+    setIsUpdating(true);
+    if (settings && settings.appVersion) {
+      localStorage.setItem("lastReloadAttemptVersion", settings.appVersion);
+    }
+    if ("caches" in window) {
+      caches.keys().then((names) => {
+        Promise.all(names.map(name => caches.delete(name))).finally(() => {
+          window.location.reload(true);
+        });
+      }).catch(() => {
+        window.location.reload(true);
+      });
+    } else {
+      window.location.reload(true);
+    }
+  }, [settings]);
+
+  useEffect(() => {
+    if (settings && settings.appVersion) {
+      const dbVersion = settings.appVersion;
+      if (dbVersion !== LOCAL_APP_VERSION) {
+        const lastAttempted = localStorage.getItem("lastReloadAttemptVersion");
+        if (lastAttempted !== dbVersion) {
+          setShowUpdatePrompt(true);
+        }
+      }
+    }
+  }, [settings]);
+
+  useEffect(() => {
+    if (showUpdatePrompt) {
+      setIsUpdating(true);
+      const timer = setTimeout(() => {
+        handleApplyUpdate();
+      }, 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [showUpdatePrompt, handleApplyUpdate]);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e) => {
@@ -382,17 +485,6 @@ export default function App() {
   );
 
   const lastBookingIdRef = useRef(null);
-  const [settings, setSettings] = useState({
-    adminPass: "admin123",
-    shift1: "18:30 - 19:30",
-    shift2: "20:00 - 21:00",
-    shiftOri: "19:00 - 20:00",
-    capacityItalian: 80,
-    capacityOriental: 30,
-    shiftLimitItalian: 40,
-    isClosedItalian: false,
-    isClosedOriental: false,
-  });
 
   useEffect(() => {
     let settingsLoaded = false;
@@ -430,10 +522,12 @@ export default function App() {
     );
 
     // Sync Bookings & Alert Logic
-    const bookingsQuery = query(
-      collection(db, "bookings"),
-      where("date", ">=", todayStr),
-    );
+    const bookingsQuery = view === "admin"
+      ? query(collection(db, "bookings"))
+      : query(
+          collection(db, "bookings"),
+          where("date", ">=", todayStr),
+        );
     const unsubscribeBookings = onSnapshot(
       bookingsQuery,
       (snapshot) => {
@@ -502,7 +596,7 @@ export default function App() {
       unsubscribeUsers();
       unsubscribeBlacklist();
     };
-  }, [todayStr, playSound, showToast]);
+  }, [todayStr, playSound, showToast, view]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -766,6 +860,110 @@ export default function App() {
   );
   */
 
+  const findAvailableTable = useCallback((date, restaurantId, time, guestsCount) => {
+    const requestedGuests = Number(guestsCount || 1);
+    const tablesList = [];
+    
+    if (restaurantId === "italian") {
+      const count = settings.tablesCountItalian !== undefined && settings.tablesCountItalian !== "" ? Number(settings.tablesCountItalian) : 12;
+      const indoorCount = Math.ceil(count * 0.6);
+      const vipCount = Math.ceil(count * 0.2);
+
+      for (let i = 1; i <= count; i++) {
+        let seats = 2;
+
+        if (i <= indoorCount) {
+          if (i % 3 === 0) {
+            seats = 6;
+          } else if (i % 2 === 0) {
+            seats = 4;
+          } else {
+            seats = 2;
+          }
+        } else if (i <= indoorCount + vipCount) {
+          seats = i % 2 === 0 ? 8 : 6;
+        } else {
+          seats = i % 2 === 0 ? 4 : 2;
+        }
+        tablesList.push({ name: i.toString(), seats });
+      }
+    } else if (restaurantId === "oriental") {
+      const count = settings.tablesCountOriental !== undefined && settings.tablesCountOriental !== "" ? Number(settings.tablesCountOriental) : 8;
+      const indoorCount = Math.ceil(count * 0.6);
+      const vipCount = Math.ceil(count * 0.2);
+
+      for (let i = 1; i <= count; i++) {
+        let seats = 4;
+
+        if (i <= indoorCount) {
+          if (i % 3 === 0) {
+            seats = 6;
+          } else if (i % 2 === 0) {
+            seats = 4;
+          } else {
+            seats = 4;
+          }
+        } else if (i <= indoorCount + vipCount) {
+          seats = i % 2 === 0 ? 8 : 6;
+        } else {
+          seats = 4;
+        }
+        tablesList.push({ name: (20 + i).toString(), seats });
+      }
+    }
+
+    if (tablesList.length === 0) return "";
+
+    const isItalianBooking = (b) => {
+      const rId = (b.resId || "").toLowerCase();
+      const rName = (b.restaurant || "").toLowerCase();
+      return rId === "italian" || rName.includes("italian") || rName.includes("إيطالي") || rName.includes("ايطالي");
+    };
+    const isOrientalBooking = (b) => {
+      const rId = (b.resId || "").toLowerCase();
+      const rName = (b.restaurant || "").toLowerCase();
+      return rId === "oriental" || rName.includes("oriental") || rName.includes("شرقي") || rName.includes("عربي");
+    };
+
+    // Filter active bookings for same date and shift/restaurant
+    const activeTimeBookings = bookings.filter((b) => {
+      const isActive = b.status === "confirmed" || b.status === "completed" || b.status === "pending";
+      const isSameDate = b.date === date;
+      const isSameRes = restaurantId === "italian" ? isItalianBooking(b) : isOrientalBooking(b);
+      const isSameTime = restaurantId === "oriental" || b.time === time;
+      return isActive && isSameDate && isSameRes && isSameTime;
+    });
+
+    const takenTableNames = new Set(
+      activeTimeBookings.filter((b) => b.tableNo).map((b) => b.tableNo.toString())
+    );
+
+    // Available tables are those not taken
+    const availableTables = tablesList.filter((table) => !takenTableNames.has(table.name));
+
+    // Best matching table: smallest seats that is >= requestedGuests
+    let qualifyingTables = availableTables.filter((table) => table.seats >= requestedGuests);
+
+    // If no single table is large enough, look at any available table
+    if (qualifyingTables.length === 0) {
+      qualifyingTables = [...availableTables];
+    }
+
+    if (qualifyingTables.length === 0) return "";
+
+    // Sort:
+    // 1. smallest seats first
+    // 2. smallest table number first
+    qualifyingTables.sort((a, b) => {
+      if (a.seats !== b.seats) {
+        return a.seats - b.seats;
+      }
+      return Number(a.name) - Number(b.name);
+    });
+
+    return qualifyingTables[0].name;
+  }, [bookings, settings]);
+
   const submitBooking = useCallback(
     async (eOrStatus) => {
       if (eOrStatus && eOrStatus.preventDefault) eOrStatus.preventDefault();
@@ -853,8 +1051,8 @@ export default function App() {
         );
 
         if (
-          dailyItal + requestedGuests > (settings.capacityItalian || 40) ||
-          shiftItal + requestedGuests > (settings.shiftLimitItalian || 20)
+          dailyItal + requestedGuests > (settings.capacityItalian || 80) ||
+          shiftItal + requestedGuests > (settings.shiftLimitItalian || 40)
         ) {
           setShowWaitlistDialog(true);
           return;
@@ -866,7 +1064,7 @@ export default function App() {
         }
         const dailyOri = getOccupancy(bookingData.date, "oriental");
 
-        if (dailyOri + requestedGuests > (settings.capacityOriental || 25)) {
+        if (dailyOri + requestedGuests > (settings.capacityOriental || 30)) {
           setShowWaitlistDialog(true);
           return;
         }
@@ -920,6 +1118,17 @@ export default function App() {
       const resName =
         bookingData.restaurant === "italian" ? t.italian : t.oriental;
 
+      // Auto-assign table if status is not waitlist
+      let assignedTableNo = "";
+      if (overrideStatus !== "waitlist") {
+        assignedTableNo = findAvailableTable(
+          bookingData.date,
+          bookingData.restaurant,
+          bookingData.time,
+          bookingData.guests
+        );
+      }
+
       // Save to Admin Dashboard Locally
       const newBooking = {
         id: Date.now(),
@@ -932,6 +1141,7 @@ export default function App() {
         resId: bookingData.restaurant,
         guests: bookingData.guests || "2",
         status: overrideStatus || "pending",
+        tableNo: assignedTableNo,
         orderDetails: orderDetails,
         engOrderDetails: engOrderDetails,
         notes: bookingData.notes || "",
@@ -984,7 +1194,7 @@ export default function App() {
         setTimeout(() => setView("success"), 1000);
       }
     },
-    [bookingData, blacklist, t, bookings, lang, cart, settings, playSound],
+    [bookingData, blacklist, t, bookings, lang, cart, settings, playSound, findAvailableTable],
   );
 
   const addToCart = useCallback(
@@ -1115,12 +1325,12 @@ export default function App() {
         return Math.max(
           0,
           Math.min(
-            (settings.capacityItalian || 40) - dailyItal,
-            (settings.shiftLimitItalian || 20) - shiftItal,
+            (settings.capacityItalian || 80) - dailyItal,
+            (settings.shiftLimitItalian || 40) - shiftItal,
           ),
         );
       }
-      return Math.max(0, (settings.capacityItalian || 40) - dailyItal);
+      return Math.max(0, (settings.capacityItalian || 80) - dailyItal);
     } else if (bookingData.restaurant === "oriental") {
       const dailyOri = bookings
         .filter(
@@ -1134,7 +1344,7 @@ export default function App() {
         )
         .reduce((sum, b) => sum + Number(b.guests || 1), 0);
 
-      return Math.max(0, (settings.capacityOriental || 25) - dailyOri);
+      return Math.max(0, (settings.capacityOriental || 30) - dailyOri);
     }
     return "-";
   }, [
@@ -1180,9 +1390,10 @@ export default function App() {
 
   return (
     <div
-      className={`min-h-screen flex flex-col ${t.dir === "rtl" ? "font-cairo" : ""}`}
+      className={`min-h-screen flex flex-col relative z-0 ${t.dir === "rtl" ? "font-cairo" : ""}`}
     >
       <div id="scroll-progress"></div>
+      <SparklesBackground />
 
       {/* Dynamic Header */}
       <Navbar
@@ -1399,6 +1610,56 @@ export default function App() {
                 {pwaTranslations[lang]?.btnDismiss || pwaTranslations["en"].btnDismiss}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Premium Automatic Update Overlay */}
+      {showUpdatePrompt && (
+        <div className="fixed inset-0 z-[1000] bg-brand-blue/95 backdrop-blur-md flex flex-col items-center justify-center p-8 overflow-hidden text-center">
+          <div className="absolute inset-0 bg-radial-gradient from-brand-orange/15 to-transparent opacity-60"></div>
+          
+          <div className="relative max-w-md w-full bg-white dark:bg-stone-900 rounded-[2.5rem] p-8 md:p-10 shadow-[0_25px_60px_rgba(0,0,0,0.6)] border border-stone-100/10 flex flex-col items-center gap-6 animate-fade-scale">
+            {/* Top orange glow strip */}
+            <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-amber-400 via-brand-orange to-brand-blue rounded-t-[2.5rem]"></div>
+            
+            {/* Pulsing reload icon */}
+            <div className="w-20 h-20 bg-amber-500/10 border border-amber-500/30 rounded-full flex items-center justify-center text-brand-orange animate-spin-slow">
+              <Clock size={40} className="animate-pulse" />
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-2xl font-serif font-bold text-brand-blue dark:text-white leading-tight">
+                {updateTranslations[lang]?.title || updateTranslations["en"].title}
+              </h3>
+              <p className="text-sm text-stone-500 dark:text-stone-300 font-bold leading-relaxed">
+                {updateTranslations[lang]?.desc || updateTranslations["en"].desc}
+              </p>
+            </div>
+
+            {/* Progress indicator */}
+            <div className="w-full space-y-2">
+              <div className="w-full h-2 bg-stone-100 dark:bg-stone-800 rounded-full overflow-hidden shadow-inner relative">
+                <div 
+                  className="h-full bg-gradient-to-r from-amber-400 via-brand-orange to-amber-500 rounded-full transition-all duration-[3000ms] ease-out"
+                  style={{ width: isUpdating ? '100%' : '0%' }}
+                ></div>
+              </div>
+              <p className="text-xs text-brand-orange font-black uppercase tracking-widest animate-pulse">
+                {isUpdating 
+                  ? (updateTranslations[lang]?.loading || updateTranslations["en"].loading) 
+                  : (updateTranslations[lang]?.btnUpdate || updateTranslations["en"].btnUpdate)}
+              </p>
+            </div>
+
+            <button
+              onClick={handleApplyUpdate}
+              disabled={isUpdating}
+              className="w-full bg-gradient-to-r from-amber-500 to-brand-orange hover:brightness-110 active:scale-[0.98] text-white py-4 rounded-2xl font-black text-sm uppercase tracking-wider transition-all shadow-lg shadow-brand-orange/20 cursor-pointer flex items-center justify-center gap-2"
+            >
+              <Clock size={18} />
+              {updateTranslations[lang]?.btnUpdate || updateTranslations["en"].btnUpdate}
+            </button>
           </div>
         </div>
       )}
