@@ -14,7 +14,7 @@ import {
   ChevronDown,
   Calendar,
 } from "lucide-react";
-import { MorenoLogo } from "./AdminPanels";
+import MorenoLogo from "./MorenoLogo";
 
 const Navbar = memo(({
   view,
@@ -116,15 +116,6 @@ const Navbar = memo(({
                 )}
               </div>
 
-              <button
-                onClick={() => setView("track")}
-                className={`text-[11px] tracking-[0.2em] uppercase font-black transition-all relative ${view === "track" ? "text-brand-orange" : "text-stone-500 hover:text-brand-blue dark:text-stone-400"}`}
-              >
-                {t.trackOrder}
-                {view === "track" && (
-                  <div className="absolute -bottom-1 left-0 w-full h-0.5 bg-brand-orange rounded-full animate-fade-in"></div>
-                )}
-              </button>
 
               <button
                 onClick={() => setView("admin")}
@@ -244,12 +235,6 @@ const Navbar = memo(({
                   key: "menu",
                   icon: <Utensils size={20} />,
                   color: "text-orange-500",
-                },
-                {
-                  key: "track",
-                  icon: <Search size={20} />,
-                  label: t.trackOrder,
-                  color: "text-green-500",
                 },
                 {
                   key: "admin",

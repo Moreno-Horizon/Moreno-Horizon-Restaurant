@@ -14,6 +14,10 @@ import {
   setDoc,
   query,
   where,
+  orderBy,
+  limit,
+  getDocs,
+  getDoc,
 } from "firebase/firestore";
 import {
   Check,
@@ -24,8 +28,8 @@ import {
 } from "lucide-react";
 
 // Firebase Instance
-import { db /*, auth */ } from "./firebase";
-// import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth"; // Deferred for now
+import { db, auth } from "./firebase";
+import { onAuthStateChanged } from "firebase/auth";
 
 // Externalized Data and Translations
 import { translations } from "./translations";
@@ -199,6 +203,7 @@ export default function App() {
   const [isLangOpen, setIsLangOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [user, setUser] = useState(null);
   const [view, setView] = useState(() => {
     return localStorage.getItem("morenoLastView") || "home";
   });
@@ -297,6 +302,12 @@ export default function App() {
     return () => {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
     };
+  }, []);
+
+  useEffect(() => {
+    return onAuthStateChanged(auth, (u) => {
+      setUser(u);
+    });
   }, []);
 
   const handlePwaInstall = async () => {
@@ -462,6 +473,48 @@ export default function App() {
   }, [lang]);
 
   const [users, setUsers] = useState([]);
+  
+  const fetchUsers = useCallback(async () => {
+    try {
+      const snapshot = await getDocs(collection(db, "users"));
+      const data = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setUsers(data);
+    } catch (e) {
+      console.error("Error fetching users:", e);
+    }
+  }, []);
+  const fetchSettings = useCallback(async () => {
+    try {
+      const docSnap = await getDoc(doc(db, "settings", "general"));
+      if (docSnap.exists()) {
+        setSettings((prev) => ({ ...prev, ...docSnap.data() }));
+      }
+    } catch (e) {
+      console.error("Error fetching settings:", e);
+    }
+  }, []);
+
+  const fetchBookings = useCallback(async () => {
+    try {
+      const bookingsQuery = view === "admin"
+        ? query(collection(db, "bookings"))
+        : query(collection(db, "bookings"), where("date", ">=", todayStr));
+      
+      const snapshot = await getDocs(bookingsQuery);
+      const data = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      data.sort((a, b) => b.id - a.id);
+      setBookings(data);
+    } catch (e) {
+      console.error("Error fetching bookings:", e);
+    }
+  }, [view, todayStr]);
+
   const [blacklist, setBlacklist] = useState([]);
   const [showWaitlistDialog, setShowWaitlistDialog] = useState(false);
   const [bookings, setBookings] = useState([]);
@@ -501,102 +554,38 @@ export default function App() {
       setIsLoading(false);
     }, 2500);
 
-    // Sync Settings
-    const unsubscribeSettings = onSnapshot(
-      doc(db, "settings", "general"),
-      (docSnap) => {
-        if (docSnap.exists()) {
-          console.log("Settings loaded from DB:", docSnap.data());
-          setSettings((prev) => ({ ...prev, ...docSnap.data() }));
-        } else {
-          console.log("Settings document does not exist yet.");
+    fetchSettings();
+    settingsLoaded = true;
+    checkLoading();
+
+    fetchBookings();
+    bookingsLoaded = true;
+    checkLoading();
+
+    if (view === "admin") {
+      fetchUsers();
+      
+
+      
+      const fetchBlacklist = async () => {
+        try {
+          const snapshot = await getDocs(collection(db, "blacklist"));
+          const data = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+          setBlacklist(data);
+        } catch (e) {
+          console.error("Error fetching blacklist:", e);
         }
-        settingsLoaded = true;
-        checkLoading();
-      },
-      (error) => {
-        console.error("Error fetching settings:", error);
-        settingsLoaded = true;
-        checkLoading();
-      },
-    );
-
-    // Sync Bookings & Alert Logic
-    const bookingsQuery = view === "admin"
-      ? query(collection(db, "bookings"))
-      : query(
-          collection(db, "bookings"),
-          where("date", ">=", todayStr),
-        );
-    const unsubscribeBookings = onSnapshot(
-      bookingsQuery,
-      (snapshot) => {
-        const data = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        data.sort((a, b) => b.id - a.id);
-
-        const currentLastId = lastBookingIdRef.current;
-        if (
-          bookingsLoaded &&
-          currentLastId &&
-          data.length > 0 &&
-          data[0].id > currentLastId &&
-          localStorage.getItem("morenoAdminAuth") === "true"
-        ) {
-          playSound("success");
-          const currentLang = localStorage.getItem("prefLang") || "ar";
-          const alertMsg =
-            translations[currentLang]?.newBookingAlert ||
-            translations["en"]?.newBookingAlert ||
-            "حجز جديد وارد!";
-          showToast(alertMsg);
-          triggerBrowserNotification(data[0]);
-        }
-        if (data.length > 0) {
-          lastBookingIdRef.current = data[0].id;
-        }
-        setBookings(data);
-
-        bookingsLoaded = true;
-        checkLoading();
-      },
-      (error) => {
-        console.error("Error fetching bookings:", error);
-        bookingsLoaded = true;
-        checkLoading();
-      },
-    );
-
-    // Sync Users
-    const unsubscribeUsers = onSnapshot(collection(db, "users"), (snapshot) => {
-      const data = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setUsers(data);
-    });
-
-    const unsubscribeBlacklist = onSnapshot(
-      collection(db, "blacklist"),
-      (snapshot) => {
-        const data = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        setBlacklist(data);
-      },
-    );
+      };
+      fetchBlacklist();
+    }
 
     return () => {
       clearTimeout(fallbackTimer);
-      unsubscribeSettings();
-      unsubscribeBookings();
-      unsubscribeUsers();
-      unsubscribeBlacklist();
     };
-  }, [todayStr, playSound, showToast, view]);
+  }, [todayStr, playSound, showToast, view, user]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -625,240 +614,78 @@ export default function App() {
     (e) => {
       const { name, value } = e.target;
 
-      // Thursday Rule for Oriental
-      if (name === "restaurant" && value === "oriental") {
-        const selectedDate = new Date(bookingData.date);
-        if (selectedDate.getDay() === 4) {
-          showToast(t.orientalThursdayMsg, 10000);
-          return;
-        }
-      }
-
-      if (name === "date") {
-        const selectedDate = new Date(value);
-        if (
-          selectedDate.getDay() === 4 &&
-          bookingData.restaurant === "oriental"
-        ) {
-          setBookingData({
-            ...bookingData,
-            date: value,
-            restaurant: "",
-            time: "",
-          });
-          showToast(t.orientalThursdayMsg, 10000);
-          return;
-        }
-      }
-
-      if (name === "room") {
-        const numericValue = value.replace(/\D/g, "");
-        if (numericValue.length <= 4) {
-          setBookingData({ ...bookingData, room: numericValue });
-        }
-        return;
-      }
-
-      if (name === "restaurant") {
-        setBookingData({ ...bookingData, restaurant: value, time: "" });
-        setActiveRestaurantMenu(value);
-
-        if (value === "oriental") {
-          const allItems = MENU_ITEMS.find((i) => i.id === 1);
-          if (allItems) {
-            setCart([{ ...allItems, qty: Number(bookingData.guests || 1) }]);
+      setBookingData((prevData) => {
+        // Thursday Rule for Oriental
+        if (name === "restaurant" && value === "oriental") {
+          const selectedDate = new Date(prevData.date);
+          if (selectedDate.getDay() === 4) {
+            showToast(t.orientalThursdayMsg, 10000);
+            return prevData;
           }
-        } else {
-          setCart([]); // Clear cart if switching back to Italian
         }
-      } else if (name === "guests") {
-        const guestsVal = Number(value);
-        setBookingData({ ...bookingData, guests: value });
 
-        // Sync Oriental 'All Items' qty with pax count
-        if (bookingData.restaurant === "oriental") {
-          setCart((prev) => {
-            const hasAllItems = prev.some((i) => i.id === 1);
-            if (hasAllItems) {
-              return prev.map((i) =>
-                i.id === 1 ? { ...i, qty: guestsVal } : i,
-              );
-            } else {
-              const allItems = MENU_ITEMS.find((i) => i.id === 1);
-              return allItems ? [{ ...allItems, qty: guestsVal }] : prev;
+        if (name === "date") {
+          const selectedDate = new Date(value);
+          if (
+            selectedDate.getDay() === 4 &&
+            prevData.restaurant === "oriental"
+          ) {
+            showToast(t.orientalThursdayMsg, 10000);
+            return {
+              ...prevData,
+              date: value,
+              restaurant: "",
+              time: "",
+            };
+          }
+        }
+
+        if (name === "room") {
+          const numericValue = value.replace(/\D/g, "");
+          if (numericValue.length <= 4) {
+            return { ...prevData, room: numericValue };
+          }
+          return prevData;
+        }
+
+        if (name === "restaurant") {
+          setActiveRestaurantMenu(value);
+
+          if (value === "oriental") {
+            const allItems = MENU_ITEMS.find((i) => i.id === 1);
+            if (allItems) {
+              setCart([{ ...allItems, qty: Number(prevData.guests || 1) }]);
             }
-          });
-        }
-      } else {
-        setBookingData({ ...bookingData, [name]: value });
-      }
-    },
-    [bookingData, t],
-  );
-
-  /* Deferred for now:
-  const triggerSmsVerification = useCallback(
-    async (statusToSave) => {
-      setOtpState((prev) => ({
-        ...prev,
-        show: true,
-        loading: true,
-        error: "",
-        statusToSave,
-      }));
-
-      const phone = bookingData.phone;
-
-      if (settings.sandboxSMS) {
-        // Sandbox / Demonstration Mode
-        setTimeout(() => {
-          const mockCode = Math.floor(100000 + Math.random() * 900000).toString();
-          setOtpState((prev) => ({
-            ...prev,
-            loading: false,
-            correctCode: mockCode,
-          }));
-          showToast(
-            lang === "ar"
-              ? `📱 رمز التحقق (الوضع التجريبي): ${mockCode}`
-              : `📱 Verification Code (Sandbox): ${mockCode}`,
-            15000,
-          );
-        }, 1200);
-      } else {
-        // Live Firebase Auth SMS Code
-        try {
-          if (!recaptchaVerifierRef.current) {
-            recaptchaVerifierRef.current = new RecaptchaVerifier(
-              auth,
-              "recaptcha-container",
-              {
-                size: "invisible",
-                callback: () => {
-                  console.log("reCAPTCHA solved");
-                },
-                "expired-callback": () => {
-                  console.log("reCAPTCHA expired");
-                },
-              },
-            );
+          } else {
+            setCart([]); // Clear cart if switching back to Italian
           }
+          return { ...prevData, restaurant: value, time: "" };
+        } else if (name === "guests") {
+          const guestsVal = Number(value);
 
-          const confirmationResult = await signInWithPhoneNumber(
-            auth,
-            phone,
-            recaptchaVerifierRef.current,
-          );
-
-          setOtpState((prev) => ({
-            ...prev,
-            loading: false,
-            confirmationResult,
-          }));
-          showToast(t.otpSent || "Verification code sent!", 4000);
-        } catch (err) {
-          console.error("Firebase Auth Error:", err);
-          let userMsg = t.error || "Something went wrong";
-          if (err.code === "auth/invalid-phone-number") {
-            userMsg = t.phoneError || "Invalid phone number format";
-          } else if (err.code === "auth/too-many-requests") {
-            userMsg =
-              lang === "ar"
-                ? "محاولات كثيرة جداً. يرجى المحاولة لاحقاً."
-                : "Too many requests. Please try again later.";
+          // Sync Oriental 'All Items' qty with pax count
+          if (prevData.restaurant === "oriental") {
+            setCart((prevCart) => {
+              const hasAllItems = prevCart.some((i) => i.id === 1);
+              if (hasAllItems) {
+                return prevCart.map((i) =>
+                  i.id === 1 ? { ...i, qty: guestsVal } : i,
+                );
+              } else {
+                const allItems = MENU_ITEMS.find((i) => i.id === 1);
+                return allItems ? [{ ...allItems, qty: guestsVal }] : prevCart;
+              }
+            });
           }
-          setOtpState((prev) => ({
-            ...prev,
-            show: false,
-            loading: false,
-            error: userMsg,
-          }));
-          showToast(userMsg, 5000);
-        }
-      }
-    },
-    [bookingData.phone, settings.sandboxSMS, lang, showToast, t],
-  );
-
-  const resendOtp = useCallback(async () => {
-    setOtpState((prev) => ({ ...prev, loading: true, error: "" }));
-    const phone = bookingData.phone;
-
-    if (settings.sandboxSMS) {
-      setTimeout(() => {
-        const mockCode = Math.floor(100000 + Math.random() * 900000).toString();
-        setOtpState((prev) => ({
-          ...prev,
-          loading: false,
-          correctCode: mockCode,
-        }));
-        showToast(
-          lang === "ar"
-            ? `📱 رمز التحقق الجديد (الوضع التجريبي): ${mockCode}`
-            : `📱 New Verification Code (Sandbox): ${mockCode}`,
-          15000,
-        );
-      }, 1000);
-    } else {
-      try {
-        const confirmationResult = await signInWithPhoneNumber(
-          auth,
-          phone,
-          recaptchaVerifierRef.current,
-        );
-        setOtpState((prev) => ({
-          ...prev,
-          loading: false,
-          confirmationResult,
-          }));
-        showToast(t.otpSent || "Verification code sent!", 4000);
-      } catch (err) {
-        console.error("Firebase Auth Resend Error:", err);
-        setOtpState((prev) => ({
-          ...prev,
-          loading: false,
-          error: t.error || "Error",
-        }));
-      }
-    }
-  }, [bookingData.phone, settings.sandboxSMS, lang, showToast, t]);
-
-  const verifyOtpCode = useCallback(
-    async (enteredCode) => {
-      setOtpState((prev) => ({ ...prev, loading: true, error: "" }));
-
-      if (settings.sandboxSMS) {
-        if (enteredCode === otpState.correctCode) {
-          setOtpState((prev) => ({ ...prev, loading: false, show: false }));
-          await submitBooking(otpState.statusToSave, true);
+          return { ...prevData, guests: value };
         } else {
-          setOtpState((prev) => ({
-            ...prev,
-            loading: false,
-            error: t.invalidOtp || "Invalid code",
-          }));
+          return { ...prevData, [name]: value };
         }
-      } else {
-        try {
-          if (!otpState.confirmationResult) {
-            throw new Error("No confirmation result");
-          }
-          await otpState.confirmationResult.confirm(enteredCode);
-          setOtpState((prev) => ({ ...prev, loading: false, show: false }));
-          await submitBooking(otpState.statusToSave, true);
-        } catch (err) {
-          console.error("Verification Error:", err);
-          setOtpState((prev) => ({
-            ...prev,
-            loading: false,
-            error: t.invalidOtp || "Invalid code",
-          }));
-        }
-      }
+      });
     },
-    [settings.sandboxSMS, otpState, t.invalidOtp],
+    [t, showToast],
   );
-  */
+
 
   const findAvailableTable = useCallback((date, restaurantId, time, guestsCount) => {
     const requestedGuests = Number(guestsCount || 1);
@@ -1506,21 +1333,22 @@ export default function App() {
           )}
 
           {view === "book" && (
-            <BookingView
-              t={t}
-              setView={setView}
-              bookingData={bookingData}
-              setBookingData={setBookingData}
-              handleInputChange={handleInputChange}
-              cart={cart}
-              getLocalDate={getLocalDate}
-              settings={settings}
-              availableTablesCount={availableTablesCount}
-              submitBooking={submitBooking}
-            />
+            <div className="space-y-12">
+              <BookingView
+                t={t}
+                setView={setView}
+                bookingData={bookingData}
+                setBookingData={setBookingData}
+                handleInputChange={handleInputChange}
+                cart={cart}
+                getLocalDate={getLocalDate}
+                settings={settings}
+                availableTablesCount={availableTablesCount}
+                submitBooking={submitBooking}
+              />
+              <TrackView t={t} bookings={bookings} />
+            </div>
           )}
-
-          {view === "track" && <TrackView t={t} bookings={bookings} />}
 
           {view === "success" && <SuccessView t={t} setView={setView} />}
 
@@ -1545,9 +1373,11 @@ export default function App() {
               lang={lang}
               users={users}
               db={db}
+              fetchUsers={fetchUsers}
               showToast={showToast}
               blacklist={blacklist}
               MENU_ITEMS={MENU_ITEMS}
+              setView={setView}
             />
           )}
         </Suspense>

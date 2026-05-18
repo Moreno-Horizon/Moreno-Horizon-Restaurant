@@ -2,7 +2,7 @@ import { memo, useState, useEffect, useCallback, useMemo } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { translations } from "../translations";
 import { auth } from "../firebase";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, signInAnonymously } from "firebase/auth";
 import {
   Search,
   Printer,
@@ -29,14 +29,17 @@ import {
   Send,
 } from "lucide-react";
 import AdminLogin from "./AdminLogin";
-import {
-  SettingsPanel,
-  UsersPanel,
-  BlacklistPanel,
-  CustomerDatabasePanel,
-  AnalyticsDashboard,
-  FeedbackPanel,
-} from "./AdminPanels";
+import SettingsPanel from "./admin/SettingsPanel";
+import UsersPanel from "./admin/UsersPanel";
+import LogsPanel from "./admin/LogsPanel";
+import BlacklistPanel from "./admin/BlacklistPanel";
+import CustomerDatabasePanel from "./admin/CustomerDatabasePanel";
+import AnalyticsDashboard from "./admin/AnalyticsDashboard";
+import FeedbackPanel from "./admin/FeedbackPanel";
+import TableMapPanel from "./admin/TableMapPanel";
+import ReminderCenterPanel from "./admin/ReminderCenterPanel";
+import WaitlistManagerPanel from "./admin/WaitlistManagerPanel";
+import OrderEditorModal from "./admin/OrderEditorModal";
 import {
   doc,
   updateDoc,
@@ -47,6 +50,11 @@ import {
   where,
   getDocs,
   setDoc,
+  getDoc,
+  addDoc,
+  orderBy,
+  limit,
+  onSnapshot,
 } from "firebase/firestore";
 
 function AdminView({
@@ -59,9 +67,11 @@ function AdminView({
   lang,
   users,
   db,
+  fetchUsers,
   showToast,
   blacklist,
   MENU_ITEMS,
+  setView,
 }) {
   // --- Admin Auth & User States ---
   const [isAdminAuth, setIsAdminAuth] = useState(
@@ -75,60 +85,76 @@ function AdminView({
   ); // 'main' or 'staff'
   const [adminUser, setAdminUser] = useState("");
   const [adminPass, setAdminPass] = useState("");
+  const [logs, setLogs] = useState([]);
+
+  useEffect(() => {
+    showToast("AdminView Mounted", 1000);
+  }, [showToast]);
+
+  useEffect(() => {
+    if (adminRole === "main") {
+      if (!auth.currentUser) {
+        signInAnonymously(auth).catch(console.error);
+      }
+      
+      const fetchLogs = async () => {
+        try {
+          const q = query(collection(db, "audit_logs"), orderBy("timestamp", "desc"), limit(100));
+          const snapshot = await getDocs(q);
+          const data = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+          setLogs(data);
+        } catch (error) {
+          console.error("Error fetching logs:", error);
+          showToast("Error loading logs: " + error.message, 5000);
+        }
+      };
+      fetchLogs();
+    }
+  }, [adminRole, showToast]);
+
+  const addLog = async (action, details) => {
+    try {
+      await addDoc(collection(db, "audit_logs"), {
+        action,
+        details,
+        userId: currentUser?.uid || "unknown",
+        userName: currentUser?.name || currentUser?.username || "System",
+        timestamp: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error("Error adding log:", e);
+    }
+  };
 
   const handleAdminLogin = async () => {
-    if (
-      adminUser.toLowerCase() === "admin" &&
-      adminPass === settings.adminPass
-    ) {
-      const adminData = { name: "Admin", username: "admin", role: "main" };
-      setAdminRole("main");
-      setCurrentUser(adminData);
-      setIsAdminAuth(true);
-      localStorage.setItem("morenoAdminAuth", "true");
-      localStorage.setItem("morenoAdminRole", "main");
-      localStorage.setItem("morenoCurrentUser", JSON.stringify(adminData));
-      return;
-    }
-
-    // Firebase Auth check
+    // Try Firebase Auth FIRST
     try {
-      const email = adminUser + "@moreno.local";
+      const email = adminUser.includes("@") ? adminUser : `${adminUser}@lamama.com`;
       const userCredential = await signInWithEmailAndPassword(auth, email, adminPass);
       const user = userCredential.user;
       
-      const userQuery = query(
-        collection(db, "users"),
-        where("username", "==", adminUser)
-      );
-      const userSnap = await getDocs(userQuery);
-      
-      let role = "staff";
-      let name = adminUser;
-      
-      if (!userSnap.empty) {
-        const userData = userSnap.docs[0].data();
-        role = userData.role || "staff";
-        name = userData.name || adminUser;
+      // Fetch user doc from Firestore using UID
+      console.log("Searching for user doc with UID:", user.uid);
+      const userDoc = await getDoc(doc(db, "users", user.uid));
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        setAdminRole(userData.role);
+        setCurrentUser(userData);
+        setIsAdminAuth(true);
+        
+        localStorage.setItem("morenoAdminAuth", "true");
+        localStorage.setItem("morenoAdminRole", userData.role);
+        localStorage.setItem("morenoCurrentUser", JSON.stringify(userData));
+        return;
+      } else {
+        showToast("User document not found in Firestore", 5000);
       }
-      
-      const adminData = {
-        name: name,
-        username: adminUser,
-        role: role,
-      };
-      
-      setAdminRole(role);
-      setCurrentUser(adminData);
-      setIsAdminAuth(true);
-      
-      localStorage.setItem("morenoAdminAuth", "true");
-      localStorage.setItem("morenoAdminRole", role);
-      localStorage.setItem("morenoCurrentUser", JSON.stringify(adminData));
-      
-    } catch (e) {
-      console.error("Login Error:", e);
-      showToast(t.wrongPassword);
+    } catch (authError) {
+      console.error("Login Error:", authError);
+      showToast(lang === "ar" ? "اسم المستخدم أو كلمة المرور غير صحيحة" : "Invalid username or password", 5000);
     }
   };
 
@@ -233,12 +259,24 @@ function AdminView({
       if (debouncedAdminSearch) return matchesSearch;
 
       let matchesDate = true;
-      if (adminStartDate && adminEndDate) {
-        matchesDate = b.date >= adminStartDate && b.date <= adminEndDate;
-      } else if (adminStartDate) {
-        matchesDate = b.date >= adminStartDate;
-      } else if (adminEndDate) {
-        matchesDate = b.date <= adminEndDate;
+      let start = adminStartDate;
+      let end = adminEndDate;
+      if (start && end && start > end) {
+        [start, end] = [end, start];
+      }
+
+      // Safely handle missing dates and extract only the date part (YYYY-MM-DD or DD-MM-YYYY)
+      const rawDate = b.date ? String(b.date).trim().substring(0, 10) : "";
+      const bDate = /^\d{2}-\d{2}-\d{4}$/.test(rawDate) 
+        ? rawDate.split("-").reverse().join("-") 
+        : rawDate;
+
+      if (start && end) {
+        matchesDate = bDate >= start && bDate <= end;
+      } else if (start) {
+        matchesDate = bDate >= start;
+      } else if (end) {
+        matchesDate = bDate <= end;
       }
 
       return matchesDate;
@@ -627,29 +665,43 @@ function AdminView({
     [t, db, showToast],
   );
 
-  const assignTableToBooking = useCallback(async (bookingId, tableNo) => {
+  const assignTableToBooking = useCallback(async (booking, tableNo) => {
     try {
-      await updateDoc(doc(db, "bookings", bookingId), {
+      await updateDoc(doc(db, "bookings", booking.id), {
         tableNo: tableNo,
       });
+      await addLog("assign_table", `${lang === "ar" ? "تسكين" : "Seated"} ${booking.name} (${lang === "ar" ? "غرفة" : "Room"} ${booking.room}) ${lang === "ar" ? "على طاولة" : "at table"} ${tableNo}`);
       showToast(lang === "ar" ? "تم تسكين الضيف في الطاولة بنجاح! 🪑" : "Guest assigned to table successfully! 🪑");
     } catch (err) {
       console.error("Error assigning table:", err);
       showToast(lang === "ar" ? "فشل تحديد الطاولة" : "Failed to assign table");
     }
-  }, [db, lang, showToast]);
+  }, [db, lang, showToast, addLog]);
 
-  const unassignTable = useCallback(async (bookingId) => {
+  const unassignTable = useCallback(async (booking) => {
     try {
-      await updateDoc(doc(db, "bookings", bookingId), {
+      await updateDoc(doc(db, "bookings", booking.id), {
         tableNo: "",
       });
+      await addLog("unassign_table", `${lang === "ar" ? "إلغاء تسكين" : "Unseated"} ${booking.name} (${lang === "ar" ? "غرفة" : "Room"} ${booking.room})`);
       showToast(lang === "ar" ? "تم تحرير الطاولة!" : "Table unassigned successfully!");
     } catch (err) {
       console.error("Error unassigning table:", err);
-      showToast(lang === "ar" ? "فشل تحرير الطاولة" : "Failed to unassign table");
+      showToast(lang === "ar" ? "فشل إلغاء تعيين الطاولة" : "Failed to unassign table");
     }
-  }, [db, lang, showToast]);
+  }, [db, lang, showToast, addLog]);
+
+  const handleDeleteBooking = useCallback(async (booking) => {
+    if (!window.confirm(lang === "ar" ? "هل أنت متأكد من حذف هذا الحجز؟" : "Are you sure you want to delete this booking?")) return;
+    try {
+      await deleteDoc(doc(db, "bookings", booking.id.toString()));
+      await addLog("delete_booking", `${lang === "ar" ? "حذف حجز" : "Deleted booking for"} ${booking.name} (${lang === "ar" ? "غرفة" : "Room"} ${booking.room})`);
+      showToast(lang === "ar" ? "تم حذف الحجز بنجاح" : "Booking deleted successfully");
+    } catch (err) {
+      console.error("Error deleting booking:", err);
+      showToast(lang === "ar" ? "فشل حذف الحجز" : "Failed to delete booking");
+    }
+  }, [db, lang, showToast, addLog]);
 
   const completeBookingFromMap = useCallback(async (bookingId) => {
     try {
@@ -657,12 +709,14 @@ function AdminView({
         status: "completed",
         updatedAt: serverTimestamp(),
       });
+      const booking = bookings.find(b => b.id.toString() === bookingId.toString());
+      await addLog("complete_booking", `${lang === "ar" ? "إكمال حجز" : "Completed booking for"} ${booking?.name || bookingId} (${lang === "ar" ? "غرفة" : "Room"} ${booking?.room || "N/A"})`);
       showToast(lang === "ar" ? "تم إنهاء الحجز وتحرير الطاولة بنجاح! ✅" : "Booking marked as completed and table freed! ✅");
     } catch (err) {
       console.error("Error completing booking:", err);
       showToast(lang === "ar" ? "فشل إنهاء الحجز" : "Failed to complete booking");
     }
-  }, [db, lang, showToast]);
+  }, [db, lang, showToast, addLog, bookings]);
 
   const saveWalkInBooking = useCallback(async () => {
     if (!walkInName || !walkInGuests) {
@@ -685,6 +739,7 @@ function AdminView({
         notes: walkInNotes,
         createdAt: serverTimestamp(),
       });
+      await addLog("add_walkin", `${lang === "ar" ? "إضافة حجز مباشر" : "Added walk-in booking for"} ${walkInName} (${lang === "ar" ? "غرفة" : "Room"} ${walkInRoom || "Walk-In"})`);
       showToast(lang === "ar" ? "تم إضافة حجز مباشر وتسكينه بنجاح! ✨" : "Walk-in booking created and assigned successfully! ✨");
       setShowWalkInModal(false);
       // Reset walk-in form
@@ -711,6 +766,7 @@ function AdminView({
     selectedMapTime,
     selectedMapTable,
     walkInNotes,
+    addLog,
   ]);
 
   const sendReminder = useCallback(async (booking) => {
@@ -736,13 +792,14 @@ function AdminView({
         reminderSent: true,
         reminderSentAt: serverTimestamp(),
       });
+      await addLog("send_reminder", `${lang === "ar" ? "إرسال تذكير" : "Sent reminder to"} ${booking.name} (${lang === "ar" ? "غرفة" : "Room"} ${booking.room})`);
 
       showToast(lang === "ar" ? "🔔 تم تسجيل تذكير النزيل وإرسال الرسالة!" : "🔔 Reminder sent and registered successfully!");
     } catch (err) {
       console.error("Error sending reminder:", err);
       showToast(lang === "ar" ? "فشل تحديث حالة التذكير" : "Failed to update reminder status");
     }
-  }, [db, lang, showToast]);
+  }, [db, lang, showToast, addLog]);
 
   const printReceipt = useCallback(
     (booking) => {
@@ -1273,7 +1330,7 @@ function AdminView({
     });
 
     const csvContent = [headers, ...rows].map((e) => e.join(",")).join("\n");
-    const blob = new Blob([`\\ufeff${csvContent}`], {
+    const blob = new Blob([`\ufeff${csvContent}`], {
       type: "text/csv;charset=utf-8;",
     });
     const link = document.createElement("a");
@@ -1301,418 +1358,22 @@ function AdminView({
     );
   }
 
-  const OrderEditorModal = ({ booking, onClose }) => {
-    const [localCart, setLocalCart] = useState(
-      booking.items || booking.cart || [],
-    );
-    const [deletedItems, setDeletedItems] = useState([]);
-    const [localBooking, setLocalBooking] = useState({
-      name: booking.name,
-      room: booking.room,
-      guests: booking.guests,
-      date: booking.date,
-      time: booking.time,
-      restaurant: booking.restaurant,
-      resId: booking.resId,
-      status: booking.status,
-      notes: booking.notes || "",
-    });
-    const [itemSearch, setItemSearch] = useState("");
-    const [showItemAdder, setShowItemAdder] = useState(false);
-
-    const handleRemoveItem = (index) => {
-      const item = localCart[index];
-      setDeletedItems([...deletedItems, item]);
-      setLocalCart(localCart.filter((_, i) => i !== index));
-    };
-
-    const handleAddItem = (item) => {
-      const currentTotal = localCart.reduce((sum, i) => sum + i.qty, 0);
-      const pax = parseInt(localBooking.guests) || 0;
-
-      if (currentTotal >= pax) {
-        showToast(t.paxLimitReached || "Pax limit reached");
-        return;
-      }
-
-      const existing = localCart.find((i) => i.id === item.id);
-      if (existing) {
-        setLocalCart(
-          localCart.map((i) =>
-            i.id === item.id ? { ...i, qty: i.qty + 1 } : i,
-          ),
-        );
-      } else {
-        setLocalCart([...localCart, { ...item, qty: 1 }]);
-      }
-      setItemSearch("");
-    };
-
-    const handleSave = async () => {
-      try {
-        const currentTotal = localCart.reduce((sum, i) => sum + i.qty, 0);
-        const pax = parseInt(localBooking.guests) || 0;
-
-        // Ensure items don't exceed pax if there are items
-        if (localCart.length > 0 && currentTotal > pax) {
-          showToast(t.paxLimitReached || "Total items exceed pax count");
-          return;
-        }
-
-        const orderSummary = localCart
-          .map(
-            (i) =>
-              `${i.qty}x ${typeof i.name === "string" ? i.name : i.name[lang] || i.name["en"]}`,
-          )
-          .join(", ");
-        await updateDoc(doc(db, "bookings", booking.id.toString()), {
-          ...localBooking,
-          items: localCart,
-          orderDetails:
-            orderSummary ||
-            (lang === "ar" ? "لا يوجد طلب طعام" : "No food order"),
-          updatedBy: currentUser.name,
-          updatedAt: serverTimestamp(),
-        });
-        showToast(t.success);
-        onClose();
-      } catch (e) {
-        console.error(e);
-        showToast(t.error);
-      }
-    };
-
-    const filteredMenuItems = MENU_ITEMS.filter((item) => {
-      const resMatch = localBooking.resId
-        ? item.restaurant === localBooking.resId
-        : true;
-      const searchMatch =
-        itemSearch === "" ||
-        (typeof item.name === "string"
-          ? item.name
-          : item.name[lang] || item.name["en"]
-        )
-          .toLowerCase()
-          .includes(itemSearch.toLowerCase());
-      return resMatch && searchMatch;
-    });
-
-    return (
-      <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
-        <div
-          className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-          onClick={onClose}
-        ></div>
-        <div className="relative bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-scale-in flex flex-col max-h-[90vh]">
-          <div className="p-8 bg-stone-50 border-b border-stone-100 flex justify-between items-center shrink-0">
-            <div>
-              <h3 className="text-2xl font-serif text-brand-blue">
-                {t.editOrderDetails}
-              </h3>
-              <p className="text-stone-400 font-bold text-xs uppercase tracking-widest mt-1">
-                {t.updateBookingData}
-              </p>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-3 hover:bg-stone-200 rounded-full transition-all text-stone-400"
-            >
-              <XCircle size={24} />
-            </button>
-          </div>
-
-          <div className="p-8 overflow-y-auto space-y-8 flex-1 custom-scrollbar">
-            {/* Status Selector */}
-            <div className="space-y-3">
-              <label className="text-[10px] font-black uppercase tracking-widest text-brand-orange px-1">
-                {t.status}
-              </label>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                {[
-                  "pending",
-                  "confirmed",
-                  "waitlist",
-                  "completed",
-                  "cancelled",
-                ].map((s) => (
-                  <button
-                    key={s}
-                    onClick={() =>
-                      setLocalBooking({ ...localBooking, status: s })
-                    }
-                    className={`px-4 py-3 rounded-xl text-xs font-black transition-all border ${
-                      localBooking.status === s
-                        ? "bg-brand-blue text-white border-brand-blue shadow-md"
-                        : "bg-white text-stone-400 border-stone-100 hover:border-stone-200"
-                    }`}
-                  >
-                    {s === "pending"
-                      ? t.statusPending
-                      : s === "confirmed"
-                        ? t.statusConfirmed
-                        : s === "waitlist"
-                          ? t.statusWaitlist
-                          : s === "completed"
-                            ? t.statusCompleted
-                            : t.statusCancelled}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Core Details Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 px-1">
-                  {t.name}
-                </label>
-                <input
-                  type="text"
-                  value={localBooking.name}
-                  onChange={(e) =>
-                    setLocalBooking({ ...localBooking, name: e.target.value })
-                  }
-                  className="w-full bg-stone-50 border border-stone-100 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-brand-orange font-bold text-brand-blue"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 px-1">
-                  {t.room}
-                </label>
-                <input
-                  type="text"
-                  value={localBooking.room}
-                  onChange={(e) =>
-                    setLocalBooking({ ...localBooking, room: e.target.value })
-                  }
-                  className="w-full bg-stone-50 border border-stone-100 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-brand-orange font-bold text-brand-blue"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 px-1">
-                  {t.guests}
-                </label>
-                <input
-                  type="number"
-                  value={localBooking.guests}
-                  onChange={(e) =>
-                    setLocalBooking({ ...localBooking, guests: e.target.value })
-                  }
-                  className="w-full bg-stone-50 border border-stone-100 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-brand-orange font-bold text-brand-blue"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 px-1">
-                  {t.time}
-                </label>
-                <input
-                  type="text"
-                  value={localBooking.time}
-                  onChange={(e) =>
-                    setLocalBooking({ ...localBooking, time: e.target.value })
-                  }
-                  className="w-full bg-stone-50 border border-stone-100 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-brand-orange font-bold text-brand-blue"
-                />
-              </div>
-            </div>
-
-            {/* Additional Comments */}
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 px-1">
-                {t.comments}
-              </label>
-              <textarea
-                value={localBooking.notes}
-                onChange={(e) =>
-                  setLocalBooking({ ...localBooking, notes: e.target.value })
-                }
-                rows={3}
-                className="w-full bg-stone-50 border border-stone-100 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-brand-orange font-bold text-brand-blue resize-none custom-scrollbar text-sm"
-                placeholder={t.comments}
-              />
-            </div>
-
-            {/* Food Items Section */}
-            <div className="space-y-4">
-              <div className="flex justify-between items-center border-b border-stone-100 pb-2">
-                <h4 className="text-sm font-black uppercase tracking-[0.2em] text-brand-orange">
-                  {t.foodItems}
-                  <span className="ms-2 text-[10px] text-stone-400">
-                    ({localCart.reduce((sum, i) => sum + i.qty, 0)} /{" "}
-                    {localBooking.guests} PAX)
-                  </span>
-                </h4>
-                <button
-                  onClick={() => setShowItemAdder(!showItemAdder)}
-                  className="flex items-center gap-1 text-xs font-black text-brand-blue hover:text-brand-orange transition-all"
-                >
-                  {showItemAdder ? <XCircle size={14} /> : <Plus size={14} />}
-                  {t.addDish}
-                </button>
-              </div>
-
-              {showItemAdder && (
-                <div className="bg-stone-50 p-4 rounded-3xl border border-stone-100 space-y-4 animate-fade-in">
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder={t.searchDish || "Search dish..."}
-                      value={itemSearch}
-                      onChange={(e) => setItemSearch(e.target.value)}
-                      className="w-full p-3 ps-10 rounded-xl border border-stone-200 outline-none focus:ring-2 focus:ring-brand-blue text-sm font-bold"
-                    />
-                    <Search
-                      size={16}
-                      className="absolute top-1/2 -translate-y-1/2 left-3 text-stone-400"
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1 custom-scrollbar">
-                    {filteredMenuItems.map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => handleAddItem(item)}
-                        className="flex items-center gap-3 p-2 bg-white rounded-xl border border-stone-100 hover:border-brand-blue transition-all text-start group"
-                      >
-                        <div className="w-8 h-8 rounded-lg overflow-hidden bg-stone-100 shrink-0">
-                          <img
-                            src={item.img}
-                            alt=""
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                            decoding="async"
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[10px] font-black text-brand-blue truncate">
-                            {typeof item.name === "string"
-                              ? item.name
-                              : item.name[lang] || item.name["en"]}
-                          </p>
-                          <p className="text-[8px] text-stone-400 font-bold uppercase">
-                            {item.category}
-                          </p>
-                        </div>
-                        <Plus
-                          size={14}
-                          className="text-stone-300 group-hover:text-brand-blue"
-                        />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {localCart.length === 0 ? (
-                <div className="text-center py-8 text-stone-400 font-bold bg-stone-50 rounded-3xl border border-dashed border-stone-200">
-                  {t.noItemsInOrder}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {localCart.map((item, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center justify-between p-4 bg-white rounded-2xl border border-stone-100 hover:border-brand-orange/30 transition-all shadow-sm"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-brand-orange/10 rounded-xl flex items-center justify-center font-black text-brand-orange text-sm">
-                          {item.qty}x
-                        </div>
-                        <div>
-                          <p className="font-bold text-brand-blue text-sm">
-                            {typeof item.name === "string"
-                              ? item.name
-                              : item.name[lang] || item.name["en"]}
-                          </p>
-                          <p className="text-[10px] text-stone-400 font-bold uppercase tracking-widest">
-                            {item.category}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => {
-                            const newCart = [...localCart];
-                            if (newCart[idx].qty > 1) {
-                              newCart[idx].qty -= 1;
-                              setLocalCart(newCart);
-                            } else {
-                              handleRemoveItem(idx);
-                            }
-                          }}
-                          className="p-2 text-stone-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Show Deleted Items for reference (To be replaced) */}
-              {deletedItems.length > 0 && (
-                <div className="space-y-3 opacity-50 grayscale mt-6">
-                  <p className="text-[10px] font-black uppercase text-stone-400 px-1">
-                    {t.deletedItemsForReplacement}
-                  </p>
-                  {deletedItems.map((item, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center justify-between p-3 bg-stone-50 rounded-xl border border-stone-100 line-through"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs font-bold text-stone-400">
-                          {item.qty}x
-                        </span>
-                        <p className="text-xs font-bold text-stone-400">
-                          {typeof item.name === "string"
-                            ? item.name
-                            : item.name[lang] || item.name["en"]}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setLocalCart([...localCart, item]);
-                          setDeletedItems(
-                            deletedItems.filter((_, i) => i !== idx),
-                          );
-                        }}
-                        className="text-[10px] font-bold text-brand-blue hover:underline"
-                      >
-                        {t.undo}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="p-8 bg-white border-t border-stone-100 flex gap-4 shrink-0">
-            <button
-              onClick={onClose}
-              className="flex-1 px-8 py-4 rounded-2xl font-black text-stone-400 hover:bg-stone-50 transition-all"
-            >
-              {t.cancel}
-            </button>
-            <button
-              onClick={handleSave}
-              className="flex-1 bg-brand-orange text-white px-8 py-4 rounded-2xl font-black hover:bg-brand-orangeHover transition-all shadow-lg"
-            >
-              {t.saveSettings || "Save"}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="max-w-7xl mx-auto py-16 px-4 animate-fade-in">
       {editingBooking && (
         <OrderEditorModal
           booking={editingBooking}
           onClose={() => setEditingBooking(null)}
+          lang={lang}
+          currentUser={currentUser}
+          db={db}
+          updateDoc={updateDoc}
+          doc={doc}
+          serverTimestamp={serverTimestamp}
+          showToast={showToast}
+          MENU_ITEMS={MENU_ITEMS}
+          t={t}
+          addLog={addLog}
         />
       )}
       <div className="space-y-8">
@@ -1727,7 +1388,7 @@ function AdminView({
               <h2 className="text-3xl md:text-5xl font-serif text-brand-blue flex flex-col md:flex-row md:items-center gap-4">
                 <span>Welcome back,</span>
                 <span className="text-brand-orange font-bold px-4 py-2 bg-brand-orange/10 rounded-2xl flex items-center gap-3">
-                  {currentUser?.name || adminUser}
+                  {currentUser?.name || adminUser || "Admin"}
                 </span>
               </h2>
               <p className="text-stone-400 mt-2 font-bold flex items-center gap-2 justify-center md:justify-start">
@@ -1738,7 +1399,9 @@ function AdminView({
                     : "Admin"
                   : adminRole === "main"
                     ? t.mainAdminRole
-                    : t.staffRole}
+                    : adminRole === "manager"
+                      ? (lang === "ar" ? "مدير" : "Manager")
+                      : t.staffRole}
               </p>
             </div>
             <div className="flex flex-wrap gap-3 w-full md:w-auto justify-center md:justify-end">
@@ -1758,7 +1421,8 @@ function AdminView({
                 </span>
               )}
               <button
-                onClick={() => {
+                onClick={async () => {
+                  // 1. Clear local state and storage immediately
                   setIsAdminAuth(false);
                   setAdminPass("");
                   setAdminRole(null);
@@ -1766,6 +1430,11 @@ function AdminView({
                   localStorage.removeItem("morenoAdminAuth");
                   localStorage.removeItem("morenoAdminRole");
                   localStorage.removeItem("morenoCurrentUser");
+                  
+                  // 2. Perform Firebase sign out and reload the page to clear all active listeners
+                  auth.signOut().finally(() => {
+                    window.location.reload();
+                  });
                 }}
                 className="px-8 py-3 bg-red-50 text-red-500 rounded-2xl font-black text-sm hover:bg-red-500 hover:text-white transition-all shadow-sm border border-red-100 flex items-center gap-2 cursor-pointer"
               >
@@ -1773,6 +1442,57 @@ function AdminView({
                 {t.logout}
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
+            <div className="absolute top-0 w-full h-1.5 bg-blue-500"></div>
+            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
+              {t.italianAvail}
+            </p>
+            <p className="text-5xl font-black text-blue-600 my-auto">
+              {italianTodayAvail}
+            </p>
+          </div>
+          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
+            <div className="absolute top-0 w-full h-1.5 bg-orange-500"></div>
+            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
+              {t.orientalAvail}
+            </p>
+            <p className="text-5xl font-black text-orange-600 my-auto">
+              {orientalTodayAvail}
+            </p>
+          </div>
+          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
+            <div className="absolute top-0 w-full h-1.5 bg-green-500"></div>
+            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
+              {t.availableTables}
+            </p>
+            <p className="text-5xl font-black text-green-600 my-auto">
+              {italianTodayAvail + orientalTodayAvail}
+            </p>
+          </div>
+          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
+            <div className="absolute top-0 w-full h-1.5 bg-brand-orange"></div>
+            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
+              {t.pendingBookings}
+            </p>
+            <p className="text-5xl font-black text-brand-orange my-auto">
+              {bookings.filter((b) => b.status === "pending").length}
+            </p>
+          </div>
+          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
+            <div className="absolute top-0 w-full h-1.5 bg-red-500"></div>
+            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
+              {t.totalPax} ({t.today})
+            </p>
+            <p className="text-5xl font-black text-red-600 my-auto">
+              {bookings
+                .filter((b) => b.date === todayStr && b.status !== "cancelled")
+                .reduce((sum, b) => sum + Number(b.guests || 0), 0)}
+            </p>
           </div>
         </div>
 
@@ -1890,58 +1610,20 @@ function AdminView({
               {t.exportExcel}
             </button>
           </div>
-        </div>
+        </div>        <WaitlistManagerPanel
+          lang={lang}
+          waitlistBookings={waitlistBookings}
+          settings={settings}
+          getOccupancy={getOccupancy}
+          currentUser={currentUser}
+          db={db}
+          showToast={showToast}
+          findAvailableTable={findAvailableTable}
+          updateDoc={updateDoc}
+          doc={doc}
+          serverTimestamp={serverTimestamp}
+        />
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
-            <div className="absolute top-0 w-full h-1.5 bg-blue-500"></div>
-            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
-              {t.italianAvail}
-            </p>
-            <p className="text-5xl font-black text-blue-600 my-auto">
-              {italianTodayAvail}
-            </p>
-          </div>
-          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
-            <div className="absolute top-0 w-full h-1.5 bg-orange-500"></div>
-            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
-              {t.orientalAvail}
-            </p>
-            <p className="text-5xl font-black text-orange-600 my-auto">
-              {orientalTodayAvail}
-            </p>
-          </div>
-          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
-            <div className="absolute top-0 w-full h-1.5 bg-green-500"></div>
-            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
-              {t.availableTables}
-            </p>
-            <p className="text-5xl font-black text-green-600 my-auto">
-              {italianTodayAvail + orientalTodayAvail}
-            </p>
-          </div>
-          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
-            <div className="absolute top-0 w-full h-1.5 bg-brand-orange"></div>
-            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
-              {t.pendingBookings}
-            </p>
-            <p className="text-5xl font-black text-brand-orange my-auto">
-              {bookings.filter((b) => b.status === "pending").length}
-            </p>
-          </div>
-          <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-stone-100 flex flex-col items-center text-center relative overflow-hidden group hover:shadow-xl transition-all">
-            <div className="absolute top-0 w-full h-1.5 bg-red-500"></div>
-            <p className="text-stone-400 font-bold text-xs uppercase tracking-wider mb-2 mt-2">
-              {t.totalPax} ({t.today})
-            </p>
-            <p className="text-5xl font-black text-red-600 my-auto">
-              {bookings
-                .filter((b) => b.date === todayStr && b.status !== "cancelled")
-                .reduce((sum, b) => sum + Number(b.guests || 0), 0)}
-            </p>
-          </div>
-        </div>
 
         {/* Bookings List */}
         <div className="bg-white rounded-[2rem] shadow-xl overflow-hidden border border-stone-100 mb-8">
@@ -2092,13 +1774,14 @@ function AdminView({
                                   doc(db, "bookings", b.id.toString()),
                                   updateData
                                 );
+                                await addLog("confirm_booking", `${lang === "ar" ? "تأكيد حجز" : "Confirmed booking for"} ${b.name} (${lang === "ar" ? "غرفة" : "Room"} ${b.room})`);
                               }}
                               className="bg-green-500 text-white px-4 py-2 rounded-xl hover:bg-green-600 font-bold shadow-sm transition-all text-sm flex items-center gap-1"
                             >
                               <CheckCircle size={16} /> {t.confirm}
                             </button>
                             <button
-                              onClick={async () =>
+                              onClick={async () => {
                                 await updateDoc(
                                   doc(db, "bookings", b.id.toString()),
                                   {
@@ -2106,8 +1789,9 @@ function AdminView({
                                     updatedBy: currentUser.name,
                                     updatedAt: serverTimestamp(),
                                   },
-                                )
-                              }
+                                );
+                                await addLog("cancel_booking", `${lang === "ar" ? "إلغاء حجز" : "Cancelled booking for"} ${b.name} (${lang === "ar" ? "غرفة" : "Room"} ${b.room})`);
+                              }}
                               className="bg-red-500 text-white px-4 py-2 rounded-xl hover:bg-red-600 font-bold shadow-sm transition-all text-sm flex items-center gap-1"
                             >
                               <XCircle size={16} /> {t.cancel}
@@ -2126,6 +1810,7 @@ function AdminView({
                                     updatedAt: serverTimestamp(),
                                   },
                                 );
+                                await addLog("complete_booking", `${lang === "ar" ? "إكمال حجز" : "Completed booking for"} ${b.name} (${lang === "ar" ? "غرفة" : "Room"} ${b.room})`);
                                 setShareBooking(b);
                               } catch (err) {
                                 console.error("Error completing booking:", err);
@@ -2155,6 +1840,7 @@ function AdminView({
                                   doc(db, "bookings", b.id.toString()),
                                   updateData
                                 );
+                                await addLog("confirm_booking", `${lang === "ar" ? "تأكيد حجز من قائمة الانتظار" : "Confirmed booking from waitlist for"} ${b.name} (${lang === "ar" ? "غرفة" : "Room"} ${b.room})`);
                                 showToast(
                                   lang === "ar"
                                     ? `تم ترقية وتأكيد حجز الضيف: ${b.name} بنجاح! 🎉`
@@ -2186,7 +1872,7 @@ function AdminView({
                         </button>
 
                         {/* Edit Button for Manager/Admin */}
-                        {(isSuperAdmin || adminRole === "main") && (
+                        {(isSuperAdmin || adminRole === "main" || adminRole === "manager") && (
                           <button
                             onClick={() => setEditingBooking(b)}
                             className="bg-brand-orange/10 text-brand-orange px-3 py-2 rounded-xl hover:bg-brand-orange/20 font-bold shadow-sm transition-all text-sm flex items-center gap-1"
@@ -2196,11 +1882,7 @@ function AdminView({
                         )}
 
                         <button
-                          onClick={async () =>
-                            await deleteDoc(
-                              doc(db, "bookings", b.id.toString()),
-                            )
-                          }
+                          onClick={() => handleDeleteBooking(b)}
                           className="text-stone-300 hover:text-red-500 p-2 rounded-xl hover:bg-red-50 transition-colors ml-auto"
                         >
                           <Trash2 size={20} />
@@ -2229,774 +1911,61 @@ function AdminView({
           )}
         </div>
 
-        {/* ========================================================================= */}
-        {/* INTERACTIVE TABLE MAP (خريطة الطاولات التفاعلية) */}
-        {/* ========================================================================= */}
-        <div className="bg-white p-6 md:p-8 rounded-[2rem] shadow-xl border border-stone-100 relative overflow-hidden animate-fade-in mb-8 no-print">
-          <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-emerald-400 via-teal-500 to-brand-blue"></div>
+        {/* 
+        <TableMapPanel
+          lang={lang}
+          selectedMapRes={selectedMapRes}
+          ITALIAN_TABLES={ITALIAN_TABLES}
+          ORIENTAL_TABLES={ORIENTAL_TABLES}
+          bookingsByTable={bookingsByTable}
+          setSelectedMapRes={setSelectedMapRes}
+          setSelectedMapTable={setSelectedMapTable}
+          setMovingBooking={setMovingBooking}
+          settings={settings}
+          selectedMapTime={selectedMapTime}
+          setSelectedMapTime={setSelectedMapTime}
+          t={t}
+          movingBooking={movingBooking}
+          selectedMapTable={selectedMapTable}
+          waitlistBookings={waitlistBookings}
+          unassignedBookings={unassignedBookings}
+          assignTableToBooking={assignTableToBooking}
+          completeBookingFromMap={completeBookingFromMap}
+          unassignTable={unassignTable}
+          printReceipt={printReceipt}
+          setWalkInGuests={setWalkInGuests}
+          setShowWalkInModal={setShowWalkInModal}
+          adminStartDate={adminStartDate}
+          todayStr={todayStr}
+        />
+        */}
 
-          {/* Header Area */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-            <div>
-              <h3 className="text-2xl font-black text-brand-blue flex items-center gap-2">
-                <Utensils className="text-emerald-500 animate-pulse" size={26} />
-                <span>{lang === "ar" ? "خريطة الطاولات التفاعلية" : "Interactive Table Map"}</span>
-                <span className="ms-2 px-2.5 py-1 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-black shadow-sm flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-                  {lang === "ar" ? "مزامنة فورية ⚡" : "Live Synced ⚡"}
-                </span>
-              </h3>
-              <p className="text-stone-400 text-xs mt-1.5 font-bold">
-                {lang === "ar"
-                  ? `عرض وإدارة توزيع الضيوف للغداء/العشاء ليوم: ${adminStartDate || todayStr}`
-                  : `Visualize and manage guest seating layout for: ${adminStartDate || todayStr}`}
-              </p>
-            </div>
+        <ReminderCenterPanel
+          lang={lang}
+          notificationPermission={notificationPermission}
+          requestNotificationPermission={requestNotificationPermission}
+          upcomingReminders={upcomingReminders}
+          getBookingStartMs={getBookingStartMs}
+          sendReminder={sendReminder}
+        />
 
-            {/* Quick Stats Summary */}
-            <div className="flex gap-4 text-xs font-bold bg-stone-50 p-3 rounded-2xl border border-stone-100">
-              <div className="text-center">
-                <p className="text-stone-400 uppercase tracking-wider text-[9px] mb-0.5">{lang === "ar" ? "إجمالي الطاولات" : "Total Tables"}</p>
-                <p className="text-stone-700 text-sm">
-                  {selectedMapRes === "italian" ? ITALIAN_TABLES.length : ORIENTAL_TABLES.length}
-                </p>
-              </div>
-              <div className="w-px bg-stone-200"></div>
-              <div className="text-center">
-                <p className="text-stone-400 uppercase tracking-wider text-[9px] mb-0.5">{lang === "ar" ? "المحجوزة" : "Booked"}</p>
-                <p className="text-rose-600 text-sm">
-                  {Object.keys(bookingsByTable).length}
-                </p>
-              </div>
-              <div className="w-px bg-stone-200"></div>
-              <div className="text-center">
-                <p className="text-stone-400 uppercase tracking-wider text-[9px] mb-0.5">{lang === "ar" ? "الشاغرة" : "Available"}</p>
-                <p className="text-emerald-600 text-sm">
-                  {(selectedMapRes === "italian" ? ITALIAN_TABLES.length : ORIENTAL_TABLES.length) - Object.keys(bookingsByTable).length}
-                </p>
-              </div>
-            </div>
-          </div>
 
-          {/* Map Filtering Controls */}
-          <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 bg-stone-50 p-4 rounded-3xl border border-stone-100 mb-8">
-            <div className="flex flex-wrap gap-3">
-              {/* Restaurant Buttons */}
-              <button
-                onClick={() => {
-                  setSelectedMapRes("italian");
-                  setSelectedMapTable(null);
-                  setMovingBooking(null);
-                }}
-                className={`px-5 py-2.5 rounded-2xl text-sm font-black transition-all shadow-sm ${
-                  selectedMapRes === "italian"
-                    ? "bg-brand-blue text-white scale-[1.02]"
-                    : "bg-white text-stone-500 hover:bg-stone-100"
-                }`}
-              >
-                {lang === "ar" ? "🇮🇹 مطعم إيطالي (La Mama)" : "🇮🇹 Italian (La Mama)"}
-              </button>
-              <button
-                onClick={() => {
-                  setSelectedMapRes("oriental");
-                  setSelectedMapTable(null);
-                  setMovingBooking(null);
-                }}
-                className={`px-5 py-2.5 rounded-2xl text-sm font-black transition-all shadow-sm ${
-                  selectedMapRes === "oriental"
-                    ? "bg-brand-orange text-white scale-[1.02]"
-                    : "bg-white text-stone-500 hover:bg-stone-100"
-                }`}
-              >
-                {lang === "ar" ? "🇪🇬 مطعم شرقي (Aseel)" : "🇪🇬 Oriental (Aseel)"}
-              </button>
-            </div>
-
-            {/* Shift selector (only for Italian) */}
-            {selectedMapRes === "italian" && (
-              <div className="flex gap-2 bg-white p-1.5 rounded-2xl shadow-inner border border-stone-200">
-                <button
-                  onClick={() => {
-                    setSelectedMapTime(settings?.shift1 || "18:30 - 19:30");
-                    setSelectedMapTable(null);
-                  }}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                    selectedMapTime === (settings?.shift1 || "18:30 - 19:30")
-                      ? "bg-stone-900 text-white shadow-sm"
-                      : "text-stone-500 hover:bg-stone-50"
-                  }`}
-                >
-                  {lang === "ar"
-                    ? `${t.shift1Label || "الفترة الأولى"} (${(settings?.shift1 || "18:30 - 19:30").split(" - ")[0]})`
-                    : `${t.shift1Label || "First Shift"} (${(settings?.shift1 || "18:30 - 19:30").split(" - ")[0]})`}
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedMapTime(settings?.shift2 || "20:00 - 21:00");
-                    setSelectedMapTable(null);
-                  }}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                    selectedMapTime === (settings?.shift2 || "20:00 - 21:00")
-                      ? "bg-stone-900 text-white shadow-sm"
-                      : "text-stone-500 hover:bg-stone-50"
-                  }`}
-                >
-                  {lang === "ar"
-                    ? `${t.shift2Label || "الفترة الثانية"} (${(settings?.shift2 || "20:00 - 21:00").split(" - ")[0]})`
-                    : `${t.shift2Label || "Second Shift"} (${(settings?.shift2 || "20:00 - 21:00").split(" - ")[0]})`}
-                </button>
-              </div>
-            )}
-
-            {/* Legend */}
-            <div className="flex items-center gap-4 text-xs font-bold text-stone-500 self-center">
-              <div className="flex items-center gap-1.5">
-                <span className="w-3.5 h-3.5 rounded-full bg-emerald-500/20 border border-emerald-400 inline-block"></span>
-                <span>{lang === "ar" ? "شاغرة" : "Empty"}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-3.5 h-3.5 rounded-full bg-rose-500/20 border border-rose-400 inline-block"></span>
-                <span>{lang === "ar" ? "محجوزة" : "Booked"}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-3.5 h-3.5 rounded-full bg-blue-500/20 border border-blue-400 inline-block"></span>
-                <span>{lang === "ar" ? "محددة" : "Selected"}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Move Banner Indicator */}
-          {movingBooking && (
-            <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4 rounded-3xl mb-6 shadow-md flex items-center justify-between animate-pulse">
-              <div className="flex items-center gap-3">
-                <ArrowLeftRight size={22} className="text-white" />
-                <span className="font-bold text-sm">
-                  {lang === "ar"
-                    ? `قيد النقل: الحجز الخاص بـ ${movingBooking.name} (غرفة ${movingBooking.room}) 🔄 انقر فوق أي طاولة فارغة لنقله إليها.`
-                    : `Moving: Booking for ${movingBooking.name} (Room ${movingBooking.room}) 🔄 Click any empty table to seat them.`}
-                </span>
-              </div>
-              <button
-                onClick={() => setMovingBooking(null)}
-                className="bg-white/20 hover:bg-white/30 text-white px-4 py-1.5 rounded-xl font-bold text-xs transition-all"
-              >
-                {lang === "ar" ? "إلغاء النقل" : "Cancel"}
-              </button>
-            </div>
-          )}
-
-          {/* Main Map + Details Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-            
-            {/* Visual Floor Plan BluePrint */}
-            <div className="lg:col-span-3 relative">
-              <div className="relative w-full aspect-[16/9] min-h-[350px] md:min-h-[480px] bg-stone-900 border border-stone-800 rounded-[2.5rem] p-6 overflow-hidden shadow-2xl">
-                
-                {/* Subtle Floor Grid lines */}
-                <div className="absolute inset-0 bg-[linear-gradient(to_right,#2d2d30_1px,transparent_1px),linear-gradient(to_bottom,#2d2d30_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-30"></div>
-                
-                {/* Dining Zone Division */}
-
-                {/* Zone Dividers (Subtle dashed borders) */}
-                <div className="absolute top-0 bottom-0 left-[55%] border-l border-dashed border-stone-700/50 pointer-events-none"></div>
-                <div className="absolute top-0 bottom-0 left-[75%] border-l border-dashed border-stone-700/50 pointer-events-none"></div>
-
-                {/* Draw Tables */}
-                {(selectedMapRes === "italian" ? ITALIAN_TABLES : ORIENTAL_TABLES).map((t) => {
-                  const assignedBooking = bookingsByTable[t.name];
-                  const isOccupied = !!assignedBooking;
-                  const isSelected = selectedMapTable && selectedMapTable.id === t.id;
-                  const isMoveTarget = movingBooking && !isOccupied;
-
-                  // Node color styles
-                  let statusClass = "border-emerald-500/30 bg-stone-900/60 text-emerald-400 neon-glow-green hover:border-emerald-400/60 hover:bg-emerald-500/10 z-10";
-                  let pulseDot = "bg-emerald-500";
-
-                  if (isOccupied) {
-                    statusClass = "border-rose-500/30 bg-stone-900/60 text-rose-400 neon-glow-rose hover:border-rose-400/60 hover:bg-rose-500/10 z-10";
-                    pulseDot = "bg-rose-500";
-                  }
-                  if (isSelected) {
-                    statusClass = "border-blue-500/60 bg-stone-850/80 text-blue-300 neon-glow-blue z-20 selected-table";
-                    pulseDot = "bg-blue-500";
-                  }
-                  if (isMoveTarget) {
-                    statusClass = "border-blue-400/50 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 cursor-pointer animate-pulse z-20";
-                    pulseDot = "bg-blue-400";
-                  }
-
-                  // Rounded / Rectangle layouts
-                  const shapeClass = t.type === "round"
-                    ? "rounded-full w-16 h-16 md:w-20 md:h-20"
-                    : t.type === "square"
-                      ? "rounded-3xl w-16 h-16 md:w-20 md:h-20"
-                      : "rounded-3xl w-24 h-16 md:w-28 md:h-20";
-
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() => {
-                        if (isMoveTarget) {
-                          // Complete transfer
-                          assignTableToBooking(movingBooking.id, t.name);
-                          setMovingBooking(null);
-                        } else {
-                          setSelectedMapTable(t);
-                        }
-                      }}
-                      className={`absolute flex flex-col items-center justify-center border-2 shadow-lg backdrop-blur-md floor-table-btn ${shapeClass} ${statusClass}`}
-                      style={{
-                        left: `${t.x}%`,
-                        top: `${t.y}%`,
-                      }}
-                    >
-                      {/* Pulsing indicator top-right */}
-                      <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
-                        <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${pulseDot}`}></span>
-                        <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${pulseDot}`}></span>
-                      </span>
-
-                      {/* Table Label */}
-                      <span className="text-xs font-black uppercase tracking-wider block opacity-70 mb-0.5">
-                        {lang === "ar" ? `طاولة ${t.name}` : `Table ${t.name}`}
-                      </span>
-
-                      {/* Seating PAX Capacity */}
-                      <span className="text-[10px] font-black opacity-50 block mb-1">
-                        👥 {t.seats}
-                      </span>
-
-                      {/* Assigned Guest Short Info */}
-                      {isOccupied && (
-                        <div className="px-1.5 py-0.5 bg-black/30 rounded-md max-w-[90%] overflow-hidden text-[9px] font-black tracking-wide text-rose-300 truncate text-center">
-                          {assignedBooking.room ? `G-${assignedBooking.room}` : ""}
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Side Control Panel */}
-            <div className="lg:col-span-1">
-              {!selectedMapTable ? (
-                // Unselected / Stats State
-                <div className="bg-stone-50 border border-stone-200 p-6 rounded-[2rem] flex flex-col justify-between h-full min-h-[300px]">
-                  <div>
-                    <h4 className="text-stone-700 font-black text-lg mb-3">
-                      {lang === "ar" ? "إدارة الصالة" : "Floor Manager"}
-                    </h4>
-                    <p className="text-stone-400 text-xs font-bold leading-relaxed">
-                      {lang === "ar"
-                        ? "حدد أي طاولة من الخريطة للبدء بتسكين الضيوف، أو تعديل الحجوزات، أو تسجيل حجز مباشر (Walk-In)."
-                        : "Select any table from the blueprint to seat guests, shift bookings, or log direct walk-ins."}
-                    </p>
-                  </div>
-
-                  {/* Occupancy Progress */}
-                  <div className="mt-6 space-y-4">
-                    <div>
-                      <div className="flex justify-between text-xs font-bold text-stone-500 mb-1.5">
-                        <span>{lang === "ar" ? "نسبة إشغال الطاولات" : "Table Occupancy"}</span>
-                        <span>
-                          {Math.round(
-                            ((Object.keys(bookingsByTable).length) / 
-                            (selectedMapRes === "italian" ? ITALIAN_TABLES.length : ORIENTAL_TABLES.length)) * 100
-                          )}%
-                        </span>
-                      </div>
-                      <div className="w-full bg-stone-200 h-2 rounded-full overflow-hidden">
-                        <div 
-                          className="bg-emerald-500 h-full transition-all duration-500"
-                          style={{
-                            width: `${((Object.keys(bookingsByTable).length) / (selectedMapRes === "italian" ? ITALIAN_TABLES.length : ORIENTAL_TABLES.length)) * 100}%`
-                          }}
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="border-t border-stone-200 pt-6 mt-6">
-                    <span className="text-[10px] font-black text-stone-400 uppercase tracking-widest block mb-3">
-                      {lang === "ar" ? "قائمة الانتظار النشطة" : "Active Waitlist"}
-                    </span>
-                    <div className="flex items-center justify-between bg-white p-3.5 rounded-2xl border border-stone-100 shadow-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
-                        <span className="text-stone-700 font-bold text-xs">
-                          {lang === "ar" ? "ضيوف في الانتظار" : "Waitlisted Guests"}
-                        </span>
-                      </div>
-                      <span className="bg-amber-50 text-amber-600 px-2.5 py-1 rounded-xl text-[10px] font-black shadow-sm">
-                        {waitlistBookings.length}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                // Table Selected State
-                <div className="bg-stone-50 border border-stone-200 p-6 rounded-[2rem] flex flex-col justify-between h-full min-h-[380px] animate-fade-in relative">
-                  <button
-                    onClick={() => setSelectedMapTable(null)}
-                    className="absolute top-4 right-4 p-1.5 text-stone-400 hover:text-stone-700 hover:bg-stone-200 rounded-full transition-all"
-                  >
-                    <XCircle size={18} />
-                  </button>
-
-                  {/* Table Header Details */}
-                  <div>
-                    <span className="bg-stone-200 text-stone-600 px-3 py-1 rounded-full text-[9px] font-black tracking-wider uppercase inline-block mb-3">
-                      {selectedMapTable.zone === "indoor"
-                        ? (lang === "ar" ? "الصالة الداخلية" : "Indoor")
-                        : selectedMapTable.zone === "vip"
-                          ? (lang === "ar" ? "ركن VIP الفاخر" : "VIP Suite")
-                          : (lang === "ar" ? "التراس الخارجي" : "Outdoor")}
-                    </span>
-                    <h4 className="text-stone-800 font-black text-xl leading-tight">
-                      {lang === "ar" ? `طاولة رقم ${selectedMapTable.name}` : `Table Number ${selectedMapTable.name}`}
-                    </h4>
-                    <p className="text-stone-400 text-xs font-bold mt-1">
-                      👥 {lang === "ar" ? `${selectedMapTable.seats} مقاعد كحد أقصى` : `Max Seats: ${selectedMapTable.seats}`}
-                    </p>
-
-                    <div className="border-b border-stone-200 my-5"></div>
-
-                    {/* Check if Table is Occupied */}
-                    {bookingsByTable[selectedMapTable.name] ? (
-                      // Occupied state content
-                      (() => {
-                        const guest = bookingsByTable[selectedMapTable.name];
-                        return (
-                          <div className="space-y-4 animate-fade-in">
-                            <div>
-                              <span className="text-[9px] font-black text-stone-400 uppercase tracking-wider block mb-1">
-                                {lang === "ar" ? "النزيل المسجل" : "Registered Guest"}
-                              </span>
-                              <p className="text-stone-800 font-black text-base">{guest.name}</p>
-                              <div className="flex gap-2 mt-1.5">
-                                <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-lg border border-emerald-100">
-                                  🏢 {lang === "ar" ? `غرفة ${guest.room}` : `Room ${guest.room}`}
-                                </span>
-                                <span className="bg-rose-50 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded-lg border border-rose-100">
-                                  👥 {guest.guests} {lang === "ar" ? "أفراد" : "PAX"}
-                                </span>
-                              </div>
-                            </div>
-
-                            {guest.phone && (
-                              <div>
-                                <span className="text-[9px] font-black text-stone-400 uppercase tracking-wider block mb-1">
-                                  {lang === "ar" ? "رقم الاتصال" : "Contact Number"}
-                                </span>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-stone-600 text-xs font-bold" dir="ltr">{guest.phone}</span>
-                                  <a
-                                    href={`tel:${guest.phone}`}
-                                    className="p-1 bg-white hover:bg-stone-200 rounded-lg text-stone-600 transition-all border border-stone-100 shadow-sm"
-                                  >
-                                    <Phone size={12} />
-                                  </a>
-                                </div>
-                              </div>
-                            )}
-
-                            {guest.notes && (
-                              <div>
-                                <span className="text-[9px] font-black text-stone-400 uppercase tracking-wider block mb-1">
-                                  {lang === "ar" ? "الملاحظات" : "Notes"}
-                                </span>
-                                <p className="text-stone-500 text-xs font-bold bg-white p-2 rounded-xl border border-stone-100">
-                                  {guest.notes}
-                                </p>
-                              </div>
-                            )}
-
-                            <div className="border-b border-stone-200 my-5"></div>
-
-                            {/* Actions Group */}
-                            <div className="space-y-2">
-                              <button
-                                onClick={() => completeBookingFromMap(guest.id)}
-                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-2xl font-black text-xs flex items-center justify-center gap-2 transition-all shadow-md"
-                              >
-                                <CheckCircle size={14} />
-                                {lang === "ar" ? "إنهاء الحجز والتحرير 🧹" : "Complete & Free Table 🧹"}
-                              </button>
-
-                              <div className="grid grid-cols-2 gap-2">
-                                <button
-                                  onClick={() => setMovingBooking(guest)}
-                                  className="bg-white hover:bg-stone-100 text-stone-700 border border-stone-200 py-3 rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm"
-                                >
-                                  <ArrowLeftRight size={12} className="text-blue-500" />
-                                  {lang === "ar" ? "نقل طاولة" : "Move Table"}
-                                </button>
-                                <button
-                                  onClick={() => unassignTable(guest.id)}
-                                  className="bg-white hover:bg-stone-100 text-stone-700 border border-stone-200 py-3 rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm"
-                                >
-                                  <Unlock size={12} className="text-stone-500" />
-                                  {lang === "ar" ? "إلغاء تعيين" : "Unseat"}
-                                </button>
-                              </div>
-
-                              <button
-                                onClick={() => printReceipt(guest)}
-                                className="w-full bg-brand-blue/10 hover:bg-brand-blue/15 text-brand-blue py-3 rounded-2xl font-black text-xs flex items-center justify-center gap-2 transition-all"
-                              >
-                                <Printer size={12} />
-                                {lang === "ar" ? "طباعة الفاتورة 🧾" : "Print Receipt 🧾"}
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })()
-                    ) : (
-                      // Empty state content (Assign flow)
-                      <div className="space-y-4 animate-fade-in">
-                        {unassignedBookings.length > 0 ? (
-                          <div>
-                            <span className="text-[9px] font-black text-stone-400 uppercase tracking-wider block mb-2">
-                              {lang === "ar" ? "تسكين ضيف مؤكد" : "Seat Confirmed Booking"}
-                            </span>
-                            <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
-                              {unassignedBookings.map((b) => (
-                                <button
-                                  key={b.id}
-                                  onClick={() => assignTableToBooking(b.id, selectedMapTable.name)}
-                                  className="w-full bg-white hover:bg-emerald-50/50 border border-stone-200 hover:border-emerald-300 p-3 rounded-2xl flex flex-col text-start transition-all shadow-sm group"
-                                >
-                                  <span className="font-bold text-stone-800 text-xs group-hover:text-emerald-700">{b.name}</span>
-                                  <div className="flex justify-between items-center w-full mt-1">
-                                    <span className="text-[10px] text-stone-400 font-bold">
-                                      🏢 {lang === "ar" ? `غرفة ${b.room}` : `Room ${b.room}`} | 👥 {b.guests} {lang === "ar" ? "أفراد" : "PAX"}
-                                    </span>
-                                    <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100 uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-all">
-                                      {lang === "ar" ? "تسكين 🪑" : "Seat 🪑"}
-                                    </span>
-                                  </div>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="bg-white p-4 rounded-2xl border border-stone-100 text-center">
-                            <p className="text-stone-400 text-xs font-bold leading-normal">
-                              {lang === "ar"
-                                ? "لا يوجد حجوزات معلقة للتسكين في هذه الفترة."
-                                : "No confirmed bookings to seat in this shift."}
-                            </p>
-                          </div>
-                        )}
-
-                        <div className="border-b border-stone-200 my-5"></div>
-
-                        {/* Direct Booking Shortcut */}
-                        <div>
-                          <button
-                            onClick={() => {
-                              setWalkInGuests(selectedMapTable.seats.toString());
-                              setShowWalkInModal(true);
-                            }}
-                            className="w-full bg-brand-orange text-white py-3.5 rounded-2xl font-black text-xs flex items-center justify-center gap-2 hover:bg-brand-orangeHover transition-all shadow-md shadow-brand-orange/15"
-                          >
-                            <UserPlus size={14} />
-                            {lang === "ar" ? "إضافة حجز مباشر (Walk-In) ➕" : "Create Walk-In Booking ➕"}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-          </div>
-        </div>
-
-        {/* ========================================================================= */}
-        {/* AUTOMATED GUEST REMINDER CENTER (مركز تذكير نزلاء الفندق قبل الحجز) */}
-        {/* ========================================================================= */}
-        <div className="bg-white p-6 md:p-8 rounded-[2rem] shadow-xl border border-stone-100 relative overflow-hidden animate-fade-in mb-8 no-print">
-          <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-amber-400 via-brand-orange to-brand-blue"></div>
-
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-            <div>
-              <h3 className="text-xl font-black text-brand-blue flex items-center gap-2">
-                <BellRing className="text-brand-orange animate-bounce" size={24} />
-                <span>{lang === "ar" ? "مركز التذكير التلقائي للنزلاء" : "Automated Guest Reminder Center"}</span>
-                <span className="ms-2 px-2.5 py-1 bg-amber-50 text-amber-600 rounded-xl text-xs font-black shadow-sm flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
-                  {lang === "ar" ? "نشط حالياً ⚡" : "Active ⚡"}
-                </span>
-              </h3>
-              <p className="text-stone-400 text-xs mt-1 font-bold">
-                {lang === "ar" 
-                  ? "تنبيهات وتذكيرات تلقائية تُرسل للنزلاء قبل موعد الحجز بساعة لتقليل نسبة التغيب (No-Show)" 
-                  : "Automatic alerts and WhatsApp templates triggered 1 hour before reservation to prevent no-shows"}
-              </p>
-            </div>
-
-            {/* Notification Permission Quick Action */}
-            <button
-              onClick={requestNotificationPermission}
-              className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all ${
-                notificationPermission === "granted"
-                  ? "bg-green-50 text-green-600 border border-green-200"
-                  : "bg-amber-50 hover:bg-amber-100 text-amber-600 border border-amber-200 animate-pulse"
-              }`}
-            >
-              <span>🔔</span>
-              <span>
-                {notificationPermission === "granted"
-                  ? (lang === "ar" ? "إشعارات المتصفح مفعّلة" : "Browser Alerts Active")
-                  : (lang === "ar" ? "تفعيل إشعارات المتصفح" : "Enable Browser Alerts")}
-              </span>
-            </button>
-          </div>
-
-          {upcomingReminders.length === 0 ? (
-            <div className="text-center py-10 px-4 bg-emerald-50/20 rounded-[1.5rem] border border-emerald-100">
-              <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-3 shadow-sm">
-                <CheckCircle size={28} className="animate-pulse" />
-              </div>
-              <p className="font-black text-emerald-800 text-sm">
-                {lang === "ar" 
-                  ? "رائع! جميع النزلاء القادمين خلال الساعتين القادمتين تم تذكيرهم بنجاح! 🎉" 
-                  : "Awesome! All guests arriving within the next 2 hours have been reminded! 🎉"}
-              </p>
-              <p className="text-[10px] text-emerald-600 mt-1 font-bold">
-                {lang === "ar" ? "معدل الحضور مستقر ومضمون بنسبة 100%." : "Attendance rate is secured and highly optimized."}
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {upcomingReminders.map((b) => {
-                const startMs = getBookingStartMs(b.date, b.time);
-                const diffMin = startMs ? Math.round((startMs - Date.now()) / 60000) : 0;
-                
-                return (
-                  <div 
-                    key={b.id} 
-                    className="bg-stone-50 border border-stone-200 hover:border-brand-orange/40 rounded-3xl p-5 shadow-sm hover:shadow-md transition-all relative overflow-hidden group flex flex-col justify-between"
-                  >
-                    {/* Glowing Accent line inside card */}
-                    <div className="absolute top-0 left-0 w-1.5 h-full bg-brand-orange/60"></div>
-                    
-                    <div>
-                      {/* Booking Tag */}
-                      <div className="flex justify-between items-start gap-2 mb-3">
-                        <span className="bg-white text-stone-600 px-2.5 py-1 rounded-lg text-[9px] font-black border border-stone-100 uppercase tracking-wider inline-block">
-                          {b.restaurant && b.restaurant.includes("La Mama") 
-                            ? "🇮🇹 La Mama" 
-                            : "🇪🇬 Aseel"}
-                        </span>
-                        
-                        {/* Countdown Pill */}
-                        <span className="bg-amber-50 text-amber-600 text-[10px] font-black px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-inner animate-pulse">
-                          <span>⏰</span>
-                          <span>
-                            {lang === "ar" 
-                              ? `يبدأ خلال ${diffMin} د` 
-                              : `Starts in ${diffMin}m`}
-                          </span>
-                        </span>
-                      </div>
-
-                      {/* Guest Details */}
-                      <h4 className="text-stone-800 font-black text-sm group-hover:text-brand-orange transition-colors">
-                        {b.name}
-                      </h4>
-                      <p className="text-stone-400 text-xs font-bold mt-1 flex items-center gap-1.5">
-                        <span>🏢 {lang === "ar" ? `غرفة ${b.room}` : `Room ${b.room}`}</span>
-                        <span>•</span>
-                        <span>👥 {b.guests} {lang === "ar" ? "أفراد" : "PAX"}</span>
-                      </p>
-
-                      <p className="text-stone-600 text-xs font-black mt-2 bg-white/80 p-2 rounded-xl border border-stone-100 flex items-center gap-1">
-                        <span>🕒</span>
-                        <span>{lang === "ar" ? `موعد الحجز: ${b.time}` : `Reserved at: ${b.time}`}</span>
-                      </p>
-                    </div>
-
-                    {/* Notification trigger button */}
-                    <div className="mt-5">
-                      <button
-                        onClick={() => sendReminder(b)}
-                        className="w-full bg-brand-orange hover:bg-brand-orangeHover text-white py-3 rounded-2xl font-black text-xs flex items-center justify-center gap-2 transition-all shadow-md shadow-brand-orange/10 cursor-pointer"
-                      >
-                        <Send size={12} className="animate-pulse" />
-                        {lang === "ar" ? "إرسال تذكير WhatsApp ⏰" : "Send WhatsApp Reminder ⏰"}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Smart Waitlist Manager Panel */}
-        <div className="bg-white p-6 md:p-8 rounded-[2rem] shadow-xl border border-stone-100 relative overflow-hidden animate-fade-in mb-8">
-          <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-amber-400 via-amber-500 to-brand-orange"></div>
-          
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-            <div>
-              <h3 className="text-xl font-black text-brand-blue flex items-center gap-2">
-                <Sparkles className="text-amber-500 animate-pulse" size={24} />
-                <span>{lang === "ar" ? "نظام الانتظار الذكي" : "Smart Waitlist Manager"}</span>
-                <span className="ms-2 px-2.5 py-1 bg-amber-50 text-amber-600 rounded-xl text-xs font-black shadow-sm">
-                  {waitlistBookings.length} {lang === "ar" ? "في الانتظار" : "Waiting"}
-                </span>
-              </h3>
-              <p className="text-stone-400 text-xs mt-1 font-bold">
-                {lang === "ar" 
-                  ? "قم بترقية الحجوزات فوراً عند توفر طاولات شاغرة لضمان الإشغال الكامل" 
-                  : "Instantly upgrade reservations when tables open up to ensure maximum occupancy"}
-              </p>
-            </div>
-          </div>
-
-          {waitlistBookings.length === 0 ? (
-            <div className="text-center py-12 px-4 bg-stone-50/50 rounded-[1.5rem] border border-dashed border-stone-200">
-              <div className="w-16 h-16 bg-green-50 text-green-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
-                <CheckCircle size={32} />
-              </div>
-              <p className="font-bold text-stone-600 text-base">
-                {lang === "ar" 
-                  ? "قائمة الانتظار فارغة حالياً. جميع الضيوف لديهم حجوزات مؤكدة! 🎉" 
-                  : "The waitlist is currently empty. All guests have confirmed bookings! 🎉"}
-              </p>
-              <p className="text-xs text-stone-400 mt-1 font-bold">
-                {lang === "ar" ? "طاولاتك مستغلة بشكل مثالي ومباشر." : "Your tables are perfectly utilized."}
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {waitlistBookings.map((b) => {
-                // Determine capacity for this waitlisted booking
-                const maxCap = b.resId === "italian" 
-                  ? (settings.capacityItalian || 80) 
-                  : (settings.capacityOriental || 30);
-                
-                const currentOccupancy = getOccupancy(b.date, b.resId, b.resId === "italian" ? b.time : null);
-                const remainingSeats = Math.max(0, maxCap - currentOccupancy);
-                const requestedGuests = Number(b.guests || 1);
-                const hasCapacity = remainingSeats >= requestedGuests;
-
-                return (
-                  <div 
-                    key={b.id} 
-                    className="group relative bg-stone-50/40 hover:bg-white p-5 rounded-3xl border border-stone-100 hover:border-amber-400/50 transition-all duration-300 shadow-sm hover:shadow-md flex flex-col justify-between overflow-hidden"
-                  >
-                    {/* Background accent */}
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2 group-hover:bg-brand-orange/10 transition-all duration-500"></div>
-                    
-                    <div>
-                      {/* Ticket Header */}
-                      <div className="flex justify-between items-start gap-2 mb-4">
-                        <div>
-                          <h4 className="font-black text-brand-blue text-base leading-tight group-hover:text-brand-orange transition-colors">
-                            {b.name}
-                          </h4>
-                          <span className="text-stone-400 font-bold text-xs mt-1 block" dir="ltr">
-                            {b.phone}
-                          </span>
-                        </div>
-                        <span className="bg-amber-500/10 text-brand-orange px-3 py-1.5 rounded-2xl text-xs font-black shrink-0 shadow-sm flex items-center gap-1">
-                          <Users size={12} />
-                          {b.guests} {lang === "ar" ? "أفراد" : "PAX"}
-                        </span>
-                      </div>
-
-                      {/* Info lines */}
-                      <div className="space-y-2 text-xs font-bold text-stone-600 mb-5 relative z-10">
-                        <div className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-stone-100/50">
-                          <span className="text-stone-400">{lang === "ar" ? "رقم الغرفة:" : "Room:"}</span>
-                          <span className="text-brand-blue font-black bg-brand-orange/5 px-2 py-0.5 rounded-lg">{b.room}</span>
-                        </div>
-                        <div className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-stone-100/50">
-                          <span className="text-stone-400">{lang === "ar" ? "المطعم:" : "Restaurant:"}</span>
-                          <span className="text-stone-800">{b.restaurant}</span>
-                        </div>
-                        <div className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-stone-100/50">
-                          <span className="text-stone-400">{lang === "ar" ? "التاريخ والوقت:" : "Date & Time:"}</span>
-                          <span className="text-stone-800">
-                            {b.date} <span className="text-brand-orange">({b.time || "19:00 - 20:00"})</span>
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Live capacity helper */}
-                      <div className="mb-5 p-3 rounded-2xl border bg-white flex flex-col gap-1.5 text-[11px] font-bold shadow-sm">
-                        <div className="flex justify-between text-stone-500">
-                          <span>{lang === "ar" ? "المقاعد المتبقية:" : "Remaining seats:"}</span>
-                          <span className={remainingSeats > 0 ? "text-green-600 font-black" : "text-red-500 font-black"}>
-                            {remainingSeats} {lang === "ar" ? "مقعد" : "seats"}
-                          </span>
-                        </div>
-                        {hasCapacity ? (
-                          <span className="text-green-600 flex items-center gap-1 bg-green-50/50 px-2.5 py-1 rounded-xl text-[10px]">
-                            <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
-                            {lang === "ar" ? "يتوفر سعة كافية للترقية الفورية" : "Sufficient capacity available for upgrade"}
-                          </span>
-                        ) : (
-                          <span className="text-red-500 flex items-center gap-1 bg-red-50/50 px-2.5 py-1 rounded-xl text-[10px]">
-                            <span className="w-1.5 h-1.5 bg-red-500 rounded-full"></span>
-                            {lang === "ar" ? "السعة غير كافية (يتطلب تجاوز الحد)" : "Capacity full (requires limit override)"}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Instant Upgrade Button */}
-                    <button
-                      onClick={async () => {
-                        try {
-                          const updateData = {
-                            status: "confirmed",
-                            updatedBy: currentUser?.name || "Admin",
-                            updatedAt: serverTimestamp(),
-                          };
-                          if (!b.tableNo) {
-                            const autoTable = findAvailableTable(b.date, b.resId, b.time, b.guests);
-                            if (autoTable) {
-                              updateData.tableNo = autoTable;
-                            }
-                          }
-                          await updateDoc(
-                            doc(db, "bookings", b.id.toString()),
-                            updateData
-                          );
-                          showToast(
-                            lang === "ar"
-                              ? `تم ترقية وتأكيد حجز الضيف: ${b.name} بنجاح! 🎉`
-                              : `Upgraded and confirmed booking for: ${b.name} successfully! 🎉`
-                          );
-                        } catch (err) {
-                          console.error("Error upgrading waitlist booking:", err);
-                        }
-                      }}
-                      className="w-full bg-gradient-to-r from-amber-500 to-brand-orange hover:from-amber-600 hover:to-brand-orangeHover text-white py-3 px-4 rounded-2xl font-black text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all duration-300 transform active:scale-95 cursor-pointer border border-brand-orange/10"
-                    >
-                      <Sparkles size={16} className="animate-spin-slow" />
-                      <span>{lang === "ar" ? "ترقية فوري ✨" : "Instant Upgrade ✨"}</span>
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
 
 
 
 
 
         {/* Administrative Panels */}
-        {(isSuperAdmin || adminRole === "main") && (
+        {(isSuperAdmin || adminRole === "main" || adminRole === "manager") && (
           <div className="space-y-8 animate-fade-in mt-12">
+            <AnalyticsDashboard bookings={bookings} t={t} lang={lang} />
+            
+            {(isSuperAdmin || adminRole === "main") && (
+              <CustomerDatabasePanel bookings={bookings} t={t} />
+            )}
+            
+            <FeedbackPanel db={db} t={t} lang={lang} showToast={showToast} />
+
             <SettingsPanel
               settings={settings}
               t={t}
@@ -3004,17 +1973,11 @@ function AdminView({
               isSuperAdmin={isSuperAdmin}
               lang={lang}
             />
-            <AnalyticsDashboard bookings={bookings} t={t} lang={lang} />
-            <FeedbackPanel db={db} t={t} lang={lang} showToast={showToast} />
-
-            {/* User Management for Super Admin ONLY */}
-            {isSuperAdmin && (
-              <UsersPanel users={users} t={t} db={db} showToast={showToast} />
-            )}
 
             {isSuperAdmin && (
-              <CustomerDatabasePanel bookings={bookings} t={t} />
+              <UsersPanel users={users} t={t} db={db} showToast={showToast} lang={lang} addLog={addLog} fetchUsers={fetchUsers} />
             )}
+
             <BlacklistPanel
               blacklist={blacklist}
               t={t}
@@ -3023,6 +1986,10 @@ function AdminView({
               currentUser={currentUser}
               lang={lang}
             />
+
+            {isSuperAdmin && (
+              <LogsPanel logs={logs} t={t} lang={lang} />
+            )}
           </div>
         )}
 
