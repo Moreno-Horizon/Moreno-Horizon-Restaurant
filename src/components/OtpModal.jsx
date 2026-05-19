@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { X, ShieldCheck, RefreshCw, Loader2 } from "lucide-react";
+import MagneticButton from "./MagneticButton";
 
 export default function OtpModal({
   otpState,
@@ -94,34 +95,34 @@ export default function OtpModal({
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       {/* Backdrop with extreme glassmorphism */}
       <div 
-        className="absolute inset-0 bg-stone-900/40 backdrop-blur-xl transition-opacity duration-300"
+        className="absolute inset-0 bg-stone-950/60 backdrop-blur-md transition-opacity duration-300"
         onClick={onClose}
       />
 
-      {/* Modal Card */}
-      <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-white/70 shadow-2xl backdrop-blur-2xl transition-all duration-300 hover:border-white/20 p-8 flex flex-col items-center">
+      {/* Modal Card using the ultra-premium glass-premium class with elastic bounce */}
+      <div className="relative w-full max-w-md overflow-hidden rounded-3xl p-8 flex flex-col items-center glass-premium border border-white/10 dark:border-stone-800/40 animate-elastic-bounce">
         {/* Glow Effects */}
-        <div className="absolute -left-20 -top-20 h-40 w-40 rounded-full bg-brand-orange/10 blur-3xl pointer-events-none" />
-        <div className="absolute -right-20 -bottom-20 h-40 w-40 rounded-full bg-brand-blue/10 blur-3xl pointer-events-none" />
+        <div className="absolute -left-20 -top-20 h-40 w-40 rounded-full bg-brand-orange/10 dark:bg-brand-orange/20 blur-3xl pointer-events-none" />
+        <div className="absolute -right-20 -bottom-20 h-40 w-40 rounded-full bg-brand-blue/10 dark:bg-brand-orange/5 blur-3xl pointer-events-none" />
 
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute right-5 top-5 p-2 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-100/50 transition-all"
+          className="absolute right-5 top-5 p-2 rounded-full text-stone-400 dark:text-stone-500 hover:text-stone-700 dark:hover:text-stone-300 hover:bg-stone-100/50 dark:hover:bg-stone-800/40 transition-all cursor-pointer"
         >
           <X size={20} />
         </button>
 
         {/* Shield Icon Header */}
-        <div className="mb-6 h-16 w-16 rounded-full bg-brand-orange/10 flex items-center justify-center border border-brand-orange/20 animate-pulse">
+        <div className="mb-6 h-16 w-16 rounded-full bg-brand-orange/10 dark:bg-brand-orange/20 flex items-center justify-center border border-brand-orange/20 dark:border-brand-orange/30 animate-pulse">
           <ShieldCheck className="text-brand-orange" size={32} />
         </div>
 
         {/* Title & Desc */}
-        <h3 className="text-xl font-black text-stone-800 mb-2 tracking-tight text-center">
+        <h3 className="text-xl font-black text-stone-800 dark:text-stone-100 mb-2 tracking-tight text-center">
           {t.enterOtpTitle || "Verify Your Phone"}
         </h3>
-        <p className="text-xs text-stone-500 font-medium text-center mb-8 max-w-xs leading-relaxed">
+        <p className="text-xs text-stone-500 dark:text-stone-400 font-medium text-center mb-8 max-w-xs leading-relaxed">
           {t.enterOtpDesc ? t.enterOtpDesc.replace("{phone}", formatPhone(otpState.phone)) : `We sent a code to ${formatPhone(otpState.phone)}`}
         </p>
 
@@ -139,23 +140,24 @@ export default function OtpModal({
                 value={digit}
                 onChange={(e) => handleChange(idx, e.target.value)}
                 onKeyDown={(e) => handleKeyDown(idx, e)}
-                className="w-12 h-14 bg-white/80 border border-stone-200 focus:border-brand-orange text-center text-xl font-black rounded-2xl text-stone-800 focus:ring-4 focus:ring-brand-orange/10 outline-none transition-all shadow-sm shadow-stone-100"
+                className="w-12 h-14 bg-white/80 dark:bg-stone-900/60 border border-stone-200 dark:border-stone-800/60 focus:border-brand-orange dark:focus:border-brand-orange text-center text-xl font-black rounded-2xl text-stone-800 dark:text-stone-100 focus:ring-4 focus:ring-brand-orange/10 outline-none transition-all shadow-sm"
               />
             ))}
           </div>
 
           {/* Error Message */}
           {otpState.error && (
-            <div className="text-xs font-bold text-red-500 mb-4 bg-red-50 border border-red-100 px-4 py-2 rounded-xl text-center w-full">
+            <div className="text-xs font-bold text-red-500 dark:text-red-400 mb-4 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 px-4 py-2 rounded-xl text-center w-full">
               {otpState.error}
             </div>
           )}
 
           {/* Verify Button */}
-          <button
+          <MagneticButton
             type="submit"
             disabled={code.join("").length < 6 || otpState.loading}
-            className="w-full bg-gradient-to-r from-brand-orange to-amber-500 text-white font-black py-4 px-6 rounded-2xl shadow-lg shadow-brand-orange/20 hover:shadow-brand-orange/35 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none transition-all flex items-center justify-center gap-2"
+            isLoading={otpState.loading}
+            className="w-full bg-gradient-to-r from-brand-orange to-amber-500 text-white font-black py-4 px-6 rounded-2xl shadow-lg shadow-brand-orange/20 hover:shadow-brand-orange/35 active:scale-[0.98] transition-all flex items-center justify-center gap-2 btn-premium"
           >
             {otpState.loading ? (
               <>
@@ -165,21 +167,21 @@ export default function OtpModal({
             ) : (
               <span>{t.verifyBtn || "Verify & Confirm"}</span>
             )}
-          </button>
+          </MagneticButton>
         </form>
 
         {/* Cooldown Timer / Resend Action */}
         <div className="mt-8 flex items-center gap-2">
           {timer > 0 ? (
-            <span className="text-xs text-stone-400 font-bold flex items-center gap-1.5">
-              <RefreshCw size={14} className="animate-spin text-stone-300" />
+            <span className="text-xs text-stone-400 dark:text-stone-500 font-bold flex items-center gap-1.5">
+              <RefreshCw size={14} className="animate-spin text-stone-300 dark:text-stone-600" />
               {lang === "ar" ? `إعادة الإرسال بعد ${timer} ثانية` : `Resend in ${timer}s`}
             </span>
           ) : (
             <button
               onClick={handleResendClick}
               disabled={otpState.loading}
-              className="text-xs font-black text-brand-orange hover:text-amber-600 transition-colors flex items-center gap-1 hover:underline"
+              className="text-xs font-black text-brand-orange hover:text-amber-600 transition-colors flex items-center gap-1 hover:underline cursor-pointer"
             >
               <span>{t.resendBtn || "Resend Code"}</span>
             </button>

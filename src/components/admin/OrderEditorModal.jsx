@@ -72,6 +72,60 @@ const OrderEditorModal = ({
         return;
       }
 
+      // Track precise changes
+      const changes = [];
+      if (booking.name !== localBooking.name) {
+        changes.push(lang === "ar" ? `الاسم: "${booking.name}" ➔ "${localBooking.name}"` : `Name: "${booking.name}" ➔ "${localBooking.name}"`);
+      }
+      if (Number(booking.guests) !== Number(localBooking.guests)) {
+        changes.push(lang === "ar" ? `الأفراد: ${booking.guests} ➔ ${localBooking.guests}` : `Guests: ${booking.guests} ➔ ${localBooking.guests}`);
+      }
+      if (booking.room !== localBooking.room) {
+        changes.push(lang === "ar" ? `الغرفة: "${booking.room}" ➔ "${localBooking.room}"` : `Room: "${booking.room}" ➔ "${localBooking.room}"`);
+      }
+      if (booking.time !== localBooking.time) {
+        changes.push(lang === "ar" ? `الوقت: "${booking.time}" ➔ "${localBooking.time}"` : `Time: "${booking.time}" ➔ "${localBooking.time}"`);
+      }
+      if (booking.notes !== localBooking.notes) {
+        changes.push(lang === "ar" ? `تعديل الملاحظات` : `Notes updated`);
+      }
+
+      // Compare dishes/items
+      const oldItems = booking.items || [];
+      const newItems = localCart;
+
+      // Added or increased items
+      newItems.forEach((newItem) => {
+        const oldItem = oldItems.find((oi) => oi.id === newItem.id);
+        const nameStr = typeof newItem.name === "string" ? newItem.name : newItem.name[lang] || newItem.name["en"];
+        if (!oldItem) {
+          changes.push(lang === "ar" ? `إضافة: ${newItem.qty}x ${nameStr}` : `Added: ${newItem.qty}x ${nameStr}`);
+        } else if (newItem.qty > oldItem.qty) {
+          changes.push(lang === "ar" ? `زيادة: ${nameStr} (+${newItem.qty - oldItem.qty})` : `Increased: ${nameStr} (+${newItem.qty - oldItem.qty})`);
+        } else if (newItem.qty < oldItem.qty) {
+          changes.push(lang === "ar" ? `تقليل: ${nameStr} (-${oldItem.qty - newItem.qty})` : `Decreased: ${nameStr} (-${oldItem.qty - newItem.qty})`);
+        }
+      });
+
+      // Completely removed items
+      oldItems.forEach((oldItem) => {
+        const newItem = newItems.find((ni) => ni.id === oldItem.id);
+        const nameStr = typeof oldItem.name === "string" ? oldItem.name : oldItem.name[lang] || oldItem.name["en"];
+        if (!newItem) {
+          changes.push(lang === "ar" ? `حذف: ${oldItem.qty}x ${nameStr}` : `Removed: ${oldItem.qty}x ${nameStr}`);
+        }
+      });
+
+      let updatedHistory = booking.editHistory || [];
+      if (changes.length > 0) {
+        const historyEntry = {
+          changedBy: currentUser?.name || currentUser?.username || "F&B Staff",
+          changedAt: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }),
+          changes: changes.join(", "),
+        };
+        updatedHistory = [...updatedHistory, historyEntry];
+      }
+
       const orderSummary = localCart
         .map(
           (i) =>
@@ -84,8 +138,9 @@ const OrderEditorModal = ({
         orderDetails:
           orderSummary ||
           (lang === "ar" ? "لا يوجد طلب طعام" : "No food order"),
-        updatedBy: currentUser.name,
+        updatedBy: currentUser.name || currentUser.username,
         updatedAt: serverTimestamp(),
+        editHistory: updatedHistory,
       });
       await addLog("update_booking", `${lang === "ar" ? "تعديل حجز" : "Updated booking for"} ${localBooking.name} (${lang === "ar" ? "غرفة" : "Room"} ${localBooking.room}). ${lang === "ar" ? "الحالة:" : "Status:"} ${localBooking.status}`);
       showToast(t.success);

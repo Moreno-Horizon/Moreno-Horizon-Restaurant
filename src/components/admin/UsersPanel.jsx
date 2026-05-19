@@ -212,9 +212,19 @@ const UsersPanel = React.memo(function UsersPanel({
       if (addLog) {
         await addLog("delete_user", `${lang === "ar" ? "حذف مستخدم" : "Deleted user"} ${userToDelete?.username || id}`);
       }
+      if (showToast) {
+        showToast(lang === "ar" ? "تم حذف المستخدم بنجاح! 🗑️" : "User deleted successfully! 🗑️");
+      }
       if (fetchUsers) await fetchUsers();
     } catch (e) {
-      console.error(e);
+      console.error("Error deleting user:", e);
+      if (showToast) {
+        if (e.code === "permission-denied") {
+          showToast(lang === "ar" ? "ليس لديك صلاحية لحذف المستخدمين. يرجى مراجعة قواعد Firestore." : "You do not have permission to delete users. Please review Firestore rules.");
+        } else {
+          showToast(lang === "ar" ? `فشل الحذف: ${e.message}` : `Deletion failed: ${e.message}`);
+        }
+      }
     }
   };
 

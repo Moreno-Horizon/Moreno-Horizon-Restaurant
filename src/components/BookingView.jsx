@@ -12,6 +12,7 @@ import {
   Utensils,
   MessageSquare,
 } from "lucide-react";
+import MagneticButton from "./MagneticButton";
 
 function BookingView({
   t,
@@ -33,7 +34,7 @@ function BookingView({
 
   return (
     <div className="max-w-4xl mx-auto py-16 px-4 animate-fade-in">
-      <div className="bg-white p-8 md:p-14 rounded-[2rem] md:rounded-[3.5rem] shadow-xl border border-stone-100 relative overflow-hidden">
+      <div className="super-glass metallic-border p-8 md:p-14 rounded-[2rem] md:rounded-[3.5rem] shadow-xl border border-stone-100 dark:border-stone-800/20 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-brand-orange/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
         <div className="absolute bottom-0 left-0 w-64 h-64 bg-brand-blue/5 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2"></div>
 
@@ -327,15 +328,15 @@ function BookingView({
                 </div>
                 {/* Continue to Menu Selection Button */}
                 <div className="md:col-span-2 pt-6">
-                  <button
-                    type="button"
+                  <MagneticButton
                     onClick={() => setView("menu")}
                     disabled={!canGoToMenu}
-                    className={`w-full py-6 rounded-[2rem] text-xl md:text-2xl font-black transition-all shadow-xl flex justify-center items-center gap-3 ${canGoToMenu ? "bg-brand-orange text-white hover:bg-brand-orangeHover hover:shadow-2xl" : "bg-stone-200 text-stone-400 cursor-not-allowed"}`}
+                    isLoading={false}
+                    className={`w-full py-6 rounded-[2rem] text-xl md:text-2xl font-black shadow-xl flex justify-center items-center gap-3 ${canGoToMenu ? "bg-brand-orange text-white hover:bg-brand-orangeHover hover:shadow-2xl" : "bg-stone-200 text-stone-400 cursor-not-allowed"}`}
                   >
                     <Utensils size={28} />
                     {t.continueToMenu}
-                  </button>
+                  </MagneticButton>
                   {!canGoToMenu && (
                     <p className="text-center text-stone-400 font-bold text-xs mt-4 uppercase tracking-widest">
                       {t.incompleteBooking}

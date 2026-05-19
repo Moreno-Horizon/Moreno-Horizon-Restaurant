@@ -87,6 +87,23 @@ function AdminView({
   const [adminPass, setAdminPass] = useState("");
   const [logs, setLogs] = useState([]);
 
+  const isReadOnlyUser = useMemo(() => {
+    if (!currentUser) return false;
+    const name = (currentUser.name || "").toLowerCase();
+    const username = (currentUser.username || "").toLowerCase();
+    return name.startsWith("fb.name") || 
+           username.startsWith("fb.name") || 
+           name.startsWith("chef.name") || 
+           username.startsWith("chef.name");
+  }, [currentUser]);
+
+  const isGrUser = useMemo(() => {
+    if (!currentUser) return false;
+    const name = (currentUser.name || "").toLowerCase();
+    const username = (currentUser.username || "").toLowerCase();
+    return name.startsWith("gr.name") || username.startsWith("gr.name");
+  }, [currentUser]);
+
   useEffect(() => {
     showToast("AdminView Mounted", 1000);
   }, [showToast]);
@@ -726,6 +743,7 @@ function AdminView({
     try {
       const newRef = doc(collection(db, "bookings"));
       await setDoc(newRef, {
+        id: Date.now(),
         name: walkInName,
         phone: walkInPhone || "Walk-In",
         guests: Number(walkInGuests),
@@ -738,6 +756,11 @@ function AdminView({
         tableNo: selectedMapTable.name,
         notes: walkInNotes,
         createdAt: serverTimestamp(),
+        createdAtTime: new Date().toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: true,
+        }),
       });
       await addLog("add_walkin", `${lang === "ar" ? "إضافة حجز مباشر" : "Added walk-in booking for"} ${walkInName} (${lang === "ar" ? "غرفة" : "Room"} ${walkInRoom || "Walk-In"})`);
       showToast(lang === "ar" ? "تم إضافة حجز مباشر وتسكينه بنجاح! ✨" : "Walk-in booking created and assigned successfully! ✨");
@@ -867,6 +890,12 @@ function AdminView({
                     <div class="info-row"><span>${curLang.time}:</span><strong>${booking.time}</strong></div>
                     <div class="info-row"><span>${curLang.restaurantType}:</span><strong>${resNamePrint}</strong></div>
                     <div class="info-row"><span>${curLang.bookingGuests}:</span><strong>${booking.guests}</strong></div>
+                    ${(booking.createdAtTime || (!isNaN(Number(booking.id)) && Number(booking.id) > 1000000000000)) ? `
+                    <div class="info-row">
+                      <span>${lang === "ar" ? "وقت تسجيل الحجز:" : "Booking Recorded At:"}</span>
+                      <strong>${booking.createdAtTime || new Date(Number(booking.id)).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })}</strong>
+                    </div>
+                    ` : ""}
                     <div class="divider"></div>
                     <div class="order-details">${cleanOrderDetails}</div>
                     <div class="divider"></div>
@@ -1135,7 +1164,14 @@ function AdminView({
 
                         return `
                       <tr>
-                        <td>${b.time}</td>
+                        <td>
+                          ${b.time}
+                          ${(b.createdAtTime || (!isNaN(Number(b.id)) && Number(b.id) > 1000000000000)) ? `
+                            <div style="font-size: 9px; color: #666; margin-top: 3px; font-weight: bold; background: #f5f5f5; padding: 2px 4px; border-radius: 4px; display: block; width: max-content;">
+                              ${lang === "ar" ? "أُنشئ:" : "Created:"} ${b.createdAtTime || new Date(Number(b.id)).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })}
+                            </div>
+                          ` : ""}
+                        </td>
                         <td>${b.name}</td>
                         <td>${b.room}</td>
                         <td style="text-align: center;">${b.guests}</td>
@@ -1353,6 +1389,7 @@ function AdminView({
           setAdminPass={setAdminPass}
           onLogin={handleAdminLogin}
           t={t}
+          lang={lang}
         />
       </div>
     );
@@ -1704,13 +1741,41 @@ function AdminView({
                           {t.addedBy} {b.updatedBy}
                         </span>
                       )}
+                      {b.editHistory && b.editHistory.length > 0 && (
+                        <div className="mt-2 space-y-1 bg-stone-50/80 p-2.5 rounded-xl border border-stone-200/60 text-[9px] text-stone-500 max-w-xs no-print leading-relaxed">
+                          <p className="font-black text-brand-orange uppercase tracking-wider text-[8px] mb-1">
+                            {lang === "ar" ? "📜 سجل التعديلات:" : "📜 Edit History:"}
+                          </p>
+                          {b.editHistory.map((h, i) => (
+                            <div key={i} className="border-b border-stone-200/50 pb-1 last:border-0 last:pb-0 font-bold">
+                              <span className="text-brand-blue">{h.changedBy}</span> 
+                              <span className="text-[8px] text-stone-400 mx-1">({h.changedAt})</span>:{" "}
+                              <span className="text-stone-600 font-semibold">{h.changes}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td className="p-6 font-bold text-stone-600">
                       <span className="text-brand-blue block text-sm mb-1">
                         {b.restaurant}
                       </span>
-                      {b.date} <br />{" "}
-                      <span className="text-brand-orange">{b.time}</span>
+                      <div className="flex flex-col gap-1">
+                        <div>{b.date}</div>
+                        <div className="text-brand-orange text-sm font-black">{b.time}</div>
+                        {(b.createdAtTime || (!isNaN(Number(b.id)) && Number(b.id) > 1000000000000)) && (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-stone-400 font-bold mt-1 bg-stone-100 px-2 py-0.5 rounded-md w-fit no-print">
+                            <span className="w-1.5 h-1.5 rounded-full bg-stone-400 animate-pulse"></span>
+                            {lang === "ar" ? "أُنشئ:" : "Created:"}{" "}
+                            {b.createdAtTime ||
+                              new Date(Number(b.id)).toLocaleTimeString("en-US", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                hour12: true,
+                              })}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="p-6 font-black text-xl text-stone-700 text-center">
                       {b.guests}
@@ -1752,10 +1817,49 @@ function AdminView({
                                   : "Completed"}
                         </span>
                       </span>
+                      {(b.status === "confirmed" || b.status === "completed") && (
+                        <div className="mt-2.5 no-print flex flex-col items-center">
+                          <button
+                            onClick={async () => {
+                              try {
+                                const newDelivered = !b.orderDelivered;
+                                await updateDoc(
+                                  doc(db, "bookings", b.id.toString()),
+                                  {
+                                    orderDelivered: newDelivered,
+                                    orderDeliveredBy: currentUser?.name || currentUser?.username || "F&B Staff",
+                                    orderDeliveredAt: serverTimestamp(),
+                                  }
+                                );
+                                await addLog("toggle_delivery", `${lang === "ar" ? "تغيير حالة تسليم الطلب" : "Toggled order delivery for"} ${b.name} (${lang === "ar" ? "غرفة" : "Room"} ${b.room}) - ${newDelivered ? (lang === "ar" ? "تم التسليم" : "Delivered") : (lang === "ar" ? "لم يتم التسليم" : "Not Delivered")}`);
+                                showToast(
+                                  lang === "ar"
+                                    ? `تم تحديث حالة استلام الطلب: ${newDelivered ? "تم الاستلام" : "لم يتم الاستلام"}`
+                                    : `Updated order delivery: ${newDelivered ? "Delivered" : "Not Delivered"}`
+                                );
+                              } catch (err) {
+                                console.error("Error toggling delivery:", err);
+                              }
+                            }}
+                            className={`px-2 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center gap-1 border transition-all cursor-pointer transform active:scale-95 ${
+                              b.orderDelivered
+                                ? "bg-emerald-50 border-emerald-200 text-emerald-600 hover:bg-emerald-100"
+                                : "bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100"
+                            }`}
+                          >
+                            <span>{b.orderDelivered ? "🍽️ " + (lang === "ar" ? "تم الاستلام" : "Delivered") : "⏳ " + (lang === "ar" ? "لم يستلم بعد" : "Pending Delivery")}</span>
+                          </button>
+                          {b.orderDelivered && b.orderDeliveredBy && (
+                            <span className="text-[8px] text-stone-400 font-bold mt-1 text-center block">
+                              {lang === "ar" ? "بواسطة:" : "By:"} {b.orderDeliveredBy}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="p-6">
                       <div className="flex gap-2">
-                        {b.status === "pending" && (
+                        {b.status === "pending" && !isReadOnlyUser && (
                           <>
                             <button
                               onClick={async () => {
@@ -1798,7 +1902,7 @@ function AdminView({
                             </button>
                           </>
                         )}
-                        {b.status === "confirmed" && (
+                        {b.status === "confirmed" && !isReadOnlyUser && (
                           <button
                             onClick={async () => {
                               try {
@@ -1821,7 +1925,7 @@ function AdminView({
                             <Check size={16} /> {t.complete}
                           </button>
                         )}
-                        {b.status === "waitlist" && (
+                        {b.status === "waitlist" && !isReadOnlyUser && (
                           <button
                             onClick={async () => {
                               try {
@@ -1871,8 +1975,8 @@ function AdminView({
                           <ChefHat size={16} />
                         </button>
 
-                        {/* Edit Button for Manager/Admin */}
-                        {(isSuperAdmin || adminRole === "main" || adminRole === "manager") && (
+                        {/* Edit Button for Manager/Admin/Staff */}
+                        {(isSuperAdmin || adminRole === "main" || adminRole === "manager" || adminRole === "staff" || isGrUser) && !isReadOnlyUser && (
                           <button
                             onClick={() => setEditingBooking(b)}
                             className="bg-brand-orange/10 text-brand-orange px-3 py-2 rounded-xl hover:bg-brand-orange/20 font-bold shadow-sm transition-all text-sm flex items-center gap-1"
@@ -1881,12 +1985,14 @@ function AdminView({
                           </button>
                         )}
 
-                        <button
-                          onClick={() => handleDeleteBooking(b)}
-                          className="text-stone-300 hover:text-red-500 p-2 rounded-xl hover:bg-red-50 transition-colors ml-auto"
-                        >
-                          <Trash2 size={20} />
-                        </button>
+                        {!isReadOnlyUser && (
+                          <button
+                            onClick={() => handleDeleteBooking(b)}
+                            className="text-stone-300 hover:text-red-500 p-2 rounded-xl hover:bg-red-50 transition-colors ml-auto"
+                          >
+                            <Trash2 size={20} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1955,40 +2061,44 @@ function AdminView({
 
 
 
-        {/* Administrative Panels */}
-        {(isSuperAdmin || adminRole === "main" || adminRole === "manager") && (
+        {/* Administrative & Analytics Panels */}
+        {(isSuperAdmin || adminRole === "main" || adminRole === "manager" || isReadOnlyUser) && (
           <div className="space-y-8 animate-fade-in mt-12">
             <AnalyticsDashboard bookings={bookings} t={t} lang={lang} />
             
-            {(isSuperAdmin || adminRole === "main") && (
-              <CustomerDatabasePanel bookings={bookings} t={t} />
-            )}
-            
-            <FeedbackPanel db={db} t={t} lang={lang} showToast={showToast} />
+            {!isReadOnlyUser && (
+              <>
+                {(isSuperAdmin || adminRole === "main") && (
+                  <CustomerDatabasePanel bookings={bookings} t={t} />
+                )}
+                
+                <FeedbackPanel db={db} t={t} lang={lang} showToast={showToast} />
 
-            <SettingsPanel
-              settings={settings}
-              t={t}
-              onSave={updateSettingsInDB}
-              isSuperAdmin={isSuperAdmin}
-              lang={lang}
-            />
+                <SettingsPanel
+                  settings={settings}
+                  t={t}
+                  onSave={updateSettingsInDB}
+                  isSuperAdmin={isSuperAdmin}
+                  lang={lang}
+                />
 
-            {isSuperAdmin && (
-              <UsersPanel users={users} t={t} db={db} showToast={showToast} lang={lang} addLog={addLog} fetchUsers={fetchUsers} />
-            )}
+                {isSuperAdmin && (
+                  <UsersPanel users={users} t={t} db={db} showToast={showToast} lang={lang} addLog={addLog} fetchUsers={fetchUsers} />
+                )}
 
-            <BlacklistPanel
-              blacklist={blacklist}
-              t={t}
-              db={db}
-              showToast={showToast}
-              currentUser={currentUser}
-              lang={lang}
-            />
+                <BlacklistPanel
+                  blacklist={blacklist}
+                  t={t}
+                  db={db}
+                  showToast={showToast}
+                  currentUser={currentUser}
+                  lang={lang}
+                />
 
-            {isSuperAdmin && (
-              <LogsPanel logs={logs} t={t} lang={lang} />
+                {isSuperAdmin && (
+                  <LogsPanel logs={logs} t={t} lang={lang} />
+                )}
+              </>
             )}
           </div>
         )}

@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { Plus, Check, ArrowLeft } from "lucide-react";
 import { CATEGORIES, MENU_ITEMS } from "../data";
+import TiltCard from "./TiltCard";
 
 const MenuView = memo(({
   t,
@@ -151,13 +152,14 @@ const MenuView = memo(({
                 {/* Items — horizontal cards */}
                 <div className="flex flex-col gap-3">
                   {categoryItems.map((item, index) => (
-                    <div
+                    <TiltCard
                       key={item.id}
-                      className="bg-white rounded-2xl overflow-hidden shadow-sm border border-stone-100 flex flex-row items-stretch animate-staggered-slide-up"
+                      className="bg-white rounded-2xl shadow-sm border border-stone-100 animate-staggered-slide-up hover:shadow-xl hover:border-brand-orange/30 transition-shadow duration-300 h-full"
                       style={{
                         animationDelay: `${index * 0.08}s`,
                       }}
                     >
+                      <div className="flex flex-row items-stretch h-full overflow-hidden rounded-2xl">
                       <img
                         src={item.img}
                         className="w-24 h-24 object-cover flex-shrink-0"
@@ -196,6 +198,7 @@ const MenuView = memo(({
                         })()}
                       </div>
                     </div>
+                    </TiltCard>
                   ))}
                 </div>
               </div>

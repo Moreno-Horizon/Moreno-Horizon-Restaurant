@@ -974,6 +974,11 @@ export default function App() {
         notes: bookingData.notes || "",
         total: 0,
         items: cart,
+        createdAtTime: new Date().toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: true,
+        }),
       };
 
       try {
@@ -1193,7 +1198,6 @@ export default function App() {
             src="/logo.webp"
             alt="Moreno"
             className="w-48 md:w-64 relative z-10 drop-shadow-[0_0_30px_rgba(255,167,38,0.3)]"
-            fetchPriority="high"
             decoding="async"
           />
         </div>
@@ -1404,8 +1408,8 @@ export default function App() {
       */}
       {/* Premium PWA Installation Floating Banner */}
       {showPwaBanner && (
-        <div className="fixed bottom-6 left-6 right-6 md:left-8 md:right-auto md:max-w-md z-[120] bg-stone-950/95 dark:bg-stone-900/95 backdrop-blur-xl p-5 md:p-6 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-stone-800 text-white flex flex-col md:flex-row items-start md:items-center gap-4 animate-slide-up no-print">
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-400 via-brand-orange to-brand-blue rounded-t-3xl"></div>
+        <div className="fixed bottom-6 left-6 right-6 md:left-8 md:right-auto md:max-w-md z-[120] bg-stone-950/95 dark:bg-stone-900/95 backdrop-blur-xl p-5 md:p-6 rounded-3xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-stone-800 text-white flex flex-col md:flex-row items-start md:items-center gap-4 animate-slide-up no-print">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-400 via-brand-orange to-brand-blue"></div>
           
           <button
             onClick={handlePwaDismiss}

@@ -9,7 +9,6 @@ const Hero = memo(({ t, setView }) => {
         <img
           src="/hero-bg.webp"
           className="absolute inset-0 w-full h-full object-cover scale-105 animate-[pulse_20s_ease-in-out_infinite_alternate]"
-          fetchPriority="high"
           decoding="async"
         />
         <div

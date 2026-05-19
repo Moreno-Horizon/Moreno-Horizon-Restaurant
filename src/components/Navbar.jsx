@@ -96,7 +96,7 @@ const Navbar = memo(({
                     {/* Invisible bridge to keep menu open when moving mouse down */}
                     <div className="absolute top-full left-0 w-full h-4 z-40" />
                     
-                    <div className="absolute top-[calc(100%-5px)] left-0 w-48 bg-white dark:bg-stone-800 rounded-2xl shadow-xl py-2 border border-stone-100 dark:border-stone-700 z-50 animate-slide-up overflow-hidden">
+                    <div className="absolute top-[calc(100%-5px)] left-0 w-48 bg-white dark:bg-stone-800 rounded-2xl shadow-xl py-2 border border-stone-100 dark:border-stone-700 z-50 animate-menu-slide overflow-hidden">
                       <button
                         onClick={() => { setView("book"); setIsBookingOpen(false); }}
                         className={`w-full text-start px-4 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-stone-50 dark:hover:bg-stone-700 transition-colors flex items-center gap-3 ${view === "book" ? "text-brand-orange bg-stone-50 dark:bg-stone-700" : "text-stone-600 dark:text-stone-300"}`}
@@ -142,17 +142,17 @@ const Navbar = memo(({
             {/* Dark Mode Toggle */}
             <button
               onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-2 text-stone-600 hover:text-brand-blue dark:text-stone-300 transition-colors"
+              className="p-2 text-stone-600 hover:text-brand-blue dark:text-stone-300 transition-colors group"
             >
-              {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+              {isDarkMode ? <Sun size={20} className="icon-pulse-hover" /> : <Moon size={20} className="icon-swing-hover" />}
             </button>
 
             {/* Cart Button */}
             <button
               onClick={() => setIsCartOpen(true)}
-              className="relative p-2 text-stone-600 hover:text-brand-orange dark:text-stone-300 transition-colors"
+              className="relative p-2 text-stone-600 hover:text-brand-orange dark:text-stone-300 transition-colors group"
             >
-              <ShoppingBag size={20} />
+              <ShoppingBag size={20} className="icon-bounce-hover" />
               {cart.length > 0 && (
                 <span className="absolute -top-1 -right-1 bg-brand-orange text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full animate-fade-in shadow-sm">
                   {cart.reduce((sum, item) => sum + item.qty, 0)}
@@ -164,16 +164,16 @@ const Navbar = memo(({
             <div className="relative">
               <button
                 onClick={() => setIsLangOpen(!isLangOpen)}
-                className="flex items-center gap-1.5 text-stone-600 hover:text-brand-blue dark:text-stone-300 font-black text-[10px] md:text-xs px-2 py-2 rounded-xl hover:bg-stone-50 dark:hover:bg-stone-800 transition-all uppercase tracking-wider"
+                className="flex items-center gap-1.5 text-stone-600 hover:text-brand-blue dark:text-stone-300 font-black text-[10px] md:text-xs px-2 py-2 rounded-xl hover:bg-stone-50 dark:hover:bg-stone-800 transition-all uppercase tracking-wider group"
               >
-                <Globe size={16} />{" "}
+                <Globe size={16} className="icon-spin-hover" />{" "}
                 <span className="hidden sm:inline-flex items-center gap-1">
                   {translations[lang].flag} {lang.toUpperCase()}
                 </span>
               </button>
               {isLangOpen && (
                 <div
-                  className="absolute top-full mt-2 w-20 bg-white dark:bg-stone-800 rounded-2xl shadow-xl py-2 border border-stone-100 dark:border-stone-700 z-50 animate-slide-down"
+                  className="absolute top-full mt-2 w-20 bg-white dark:bg-stone-800 rounded-2xl shadow-xl py-2 border border-stone-100 dark:border-stone-700 z-50 animate-menu-slide"
                   style={{ [t.dir === "rtl" ? "left" : "right"]: 0 }}
                 >
                   {Object.keys(translations).map((l) => (
