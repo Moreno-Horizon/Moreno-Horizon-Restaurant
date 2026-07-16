@@ -15,6 +15,9 @@ const MenuView = memo(({
   availableTablesCount,
   setView,
 }) => {
+  const selectedDate = bookingData.date ? new Date(bookingData.date) : new Date();
+  const isThursday = selectedDate.getDay() === 4;
+  const showToggle = !bookingData.restaurant || (isThursday && bookingData.restaurant === "italian");
   const isRestaurantLocked = !!bookingData.restaurant;
   const isBookingFlow = !!bookingData.name;
   const totalItems = cart.reduce((sum, item) => sum + item.qty, 0);
@@ -67,8 +70,8 @@ const MenuView = memo(({
         </p>
       </div>
 
-      {/* Restaurant Toggle - Only show if NOT locked */}
-      {!isRestaurantLocked && (
+      {/* Restaurant Toggle - Show if not locked OR if it is Thursday and booking Italian */}
+      {showToggle && (
         <div className="flex justify-center gap-3 py-8 px-4 sticky top-[60px] md:top-20 z-40 bg-white/80 backdrop-blur-md border-b border-stone-100">
           <button
             onClick={() => setActiveRestaurantMenu("oriental")}

@@ -221,6 +221,16 @@ export default function App() {
       const saved = localStorage.getItem("morenoBookingData");
       if (saved) {
         const parsed = JSON.parse(saved);
+        const today = new Date();
+        const isThursday = today.getDay() === 4;
+        if (isThursday && parsed.restaurant === "oriental") {
+          return {
+            ...parsed,
+            date: getLocalDate(),
+            restaurant: "",
+            time: "",
+          };
+        }
         return { ...parsed, date: getLocalDate() };
       }
     } catch (e) {
@@ -237,7 +247,25 @@ export default function App() {
       notes: "",
     };
   });
-  const [activeRestaurantMenu, setActiveRestaurantMenu] = useState("oriental");
+  const [activeRestaurantMenu, setActiveRestaurantMenu] = useState(() => {
+    try {
+      const saved = localStorage.getItem("morenoBookingData");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const today = new Date();
+        const isThursday = today.getDay() === 4;
+        if (isThursday && parsed.restaurant === "oriental") {
+          return "italian";
+        }
+        if (parsed.restaurant) {
+          return parsed.restaurant;
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return "italian";
+  });
   const [isDarkMode, setIsDarkMode] = useState(
     () => localStorage.getItem("darkMode") === "true",
   );
@@ -631,6 +659,7 @@ export default function App() {
             prevData.restaurant === "oriental"
           ) {
             showToast(t.orientalThursdayMsg, 10000);
+            setActiveRestaurantMenu("italian");
             return {
               ...prevData,
               date: value,
